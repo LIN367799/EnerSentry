@@ -1,0 +1,9 @@
+{
+  "name": "enersentry",
+  "version": "0.1.0",
+  "dependencies": [
+    "catch2",
+    "nlohmann-json",
+    "spdlog"
+  ]
+}

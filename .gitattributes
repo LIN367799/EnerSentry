@@ -1,0 +1,32 @@
+# ============================================================
+# EnerSentry —— 仓库根 .gitattributes
+# 统一换行策略，消除 LF/CRLF 告警，保证跨平台一致性
+# ============================================================
+
+# 默认：文本文件统一以 LF 入库/检出（Windows 不再自动转 CRLF）
+* text=auto eol=lf
+
+# Windows 批处理 / 脚本保留 CRLF（若以后引入 .bat/.cmd）
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 源码类强制按文本处理（即使无扩展名也能正确归一化）
+*.cmake text
+CMakeLists.txt text
+CMakePresets.json text
+vcpkg.json text
+.gitignore text
+.gitattributes text
+
+# 二进制文件：禁止 Git 触碰换行符，避免损坏
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gif binary
+*.dll binary
+*.exe binary
+*.lib binary
+*.bin binary
+*.zip binary
+*.7z binary
