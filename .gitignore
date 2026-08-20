@@ -1,0 +1,27 @@
+# ============================================================
+# EnerSentry —— 仓库根 .gitignore
+# 依据 ENS-DEV-ARCH §2.2.2 与 ENS-DEV-BOOT §3.1 编制
+# 三类不入库：构建产物 / IDE 用户文件 / 运行期生成数据
+# ============================================================
+
+# ---------- 1. 构建产物（out-of-source）----------
+build/                 # CMake 二进制目录（含 moc_*.cpp / ui_*.h / qrc_*.cpp 自动生成物）
+out/
+bin/                  # 部署产物集中目录（ens_app.exe / *.dll / Qt DLL）
+
+# ---------- 2. IDE / 编辑器 用户文件 ----------
+*.user                # Qt Creator 用户配置（每人本地状态，不共享）
+*.user.*
+.vs/                  # Visual Studio
+.vscode/              # VS Code
+
+# ---------- 3. 运行期生成数据（绝不入库）----------
+# 含 meta.db / audit_*.db / history_*.db / blackbox.db / critical_swap.dat / sim 导出
+apps/ens_app/data/
+apps/device_simulator/data/
+
+# ---------- 4. 杂项 ----------
+compile_commands.json # clangd / clang-tidy 生成
+*.log
+Thumbs.db
+.DS_Store
