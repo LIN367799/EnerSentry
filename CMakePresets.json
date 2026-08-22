@@ -35,16 +35,18 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
-    }
-  ],
-  "buildPresets": [
-    {
-      "name": "debug",
-      "configurePreset": "vs2022-debug"
     },
     {
-      "name": "release",
-      "configurePreset": "vs2022-release"
+      "hidden": true,
+      "name": "Qt",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
+      },
+      "vendor": {
+        "qt-project.org/Qt": {
+          "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
+        }
+      }
     }
   ],
   "testPresets": [
@@ -54,6 +56,18 @@
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "release",
+      "configurePreset": "vs2022-release",
+      "output": {
+        "outputOnFailure": true
+      }
     }
-  ]
+  ],
+  "vendor": {
+    "qt-project.org/Presets": {
+      "checksum": "3DuC2C/7mlifnRVCqA4Rph/3lOw="
+    }
+  }
 }
