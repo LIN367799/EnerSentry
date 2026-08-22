@@ -10,12 +10,12 @@
 
 ## 0. 一句话结论（先回答你最关心的问题）
 
-> **依赖统一经 vcpkg 引入（Qt5 与小库全由 vcpkg 装），这是编码前必须最先落实的一步——但它不是唯一要做的事。**
+> **依赖分三类引入（已与 `ENS-DEV-ENV §1` 对齐）：Qt 5.15 经独立套件 + `CMAKE_PREFIX_PATH`；Catch2 / nlohmann_json / spdlog 经 vcpkg；QCustomPlot 源码 vendored 进 `3rdparty/`。这是编码前必须最先落实的一步——但它不是唯一要做的事。**
 
 正确顺序是：
 
 1. **锁工具链**（编译器/CMake/Qt 版本必须对齐）—— 非此不可，否则后面全是玄学报错。
-2. **落实依赖（统一 vcpkg）**：仓库根放 `vcpkg.json` 声明全部依赖（Qt5 + QCustomPlot/Catch2/nlohmann_json/spdlog），配置时注入 vcpkg toolchain 即可，本地与 CI 完全一致。
+2. **落实依赖（三类来源，已定型）**：Qt 5.15 经独立套件 + `CMAKE_PREFIX_PATH`；Catch2 / nlohmann_json / spdlog 经仓库根 `vcpkg.json`（manifest 模式，配置时注入 vcpkg toolchain）；QCustomPlot 源码 vendored 进 `3rdparty/`。三者收口于 `cmake/Ens3rdparty.cmake` 的 `ens_3rdparty` INTERFACE 库，本地与 CI 完全一致。
 3. **写构建骨架**：顶层 `CMakeLists.txt` + 各子工程 `CMakeLists.txt` + `ens_3rdparty` 接口库。
 4. **跑通 BUILD-0 冒烟里程碑**：一个**空的 Qt 窗口能编译、能链接、能运行**，全绿。
 5. **然后才正式编码** —— 接 `ENS-DEV-GUIDE` 的 §1.4 测试地基 + Phase 1~4。
@@ -49,18 +49,24 @@ cl.exe                          # 应显示 Microsoft (R) C/C++ Optimizing Compi
 
 ---
 
-## 2. Step B — 依赖从哪来：统一 vcpkg（你问的核心）
+## 2. Step B — 依赖从哪来：三类来源（已定型，你问的核心）
 
-**结论先行**：本项目所有第三方依赖（Qt 5.15 + QCustomPlot + Catch2 + nlohmann_json + spdlog + SQLite）**统一经 vcpkg 引入**，不再区分"开发期 FetchContent / 产线 vcpkg"。理由：依赖来源单一、版本可锁定（`vcpkg.json` + `builtin-baseline`），本地 / CI / 产线完全一致、可一键复现；且 Qt 经 vcpkg 默认即 SHARED 动态链接，正好满足 LGPL 红线（§4）。
+**结论先行**：本项目的第三方依赖**分三类引入**（决策见 `ENS-DEV-ENV §1`，与 `cmake/Ens3rdparty.cmake` / `CMakePresets.json` 实际配置一致）：
 
-| 依赖 | vcpkg 端口 | 理由 |
+- **Qt 5.15（Core/Gui/Widgets/PrintSupport/SerialPort/Network/Sql）** → **独立套件**，经 `CMAKE_PREFIX_PATH` 指向 `D:\HJL\qt\5.15.2\msvc2019_64` 解析（`find_package(Qt5 ...)`）；**不经 vcpkg 编译**。LGPL 要求 SHARED 动态链接，独立套件默认即动态链接，契合 §4。
+- **Catch2 / nlohmann_json / spdlog** → **vcpkg**（manifest 模式，仓库根 `vcpkg.json` 声明；`CMAKE_TOOLCHAIN_FILE` 注入查找路径）。
+- **QCustomPlot 2.1.1** → **源码 vendored** 进 `3rdparty/`，随工程编译（避免经 vcpkg 拉起 qtbase 导致重复编译 / 双 Qt 运行时冲突）。
+
+> 不再追求"全部走 vcpkg"——Qt 体积大、编译慢，且本项目已固定有独立 Qt 套件，强行经 vcpkg 编译只会引入双运行时风险。三类来源统一经 `ens_3rdparty` INTERFACE 库收口，业务代码无感知。
+
+| 依赖 | 引入方式 | 理由 |
 | --- | --- | --- |
-| **Qt 5.15（Core/Gui/Widgets/SerialPort/Network）** | `qt5-base` + `qt5-serialport` | LGPL 必须 SHARED，vcpkg 默认动态链接，契合 §4。 |
-| **QCustomPlot** | `qcustomplot` | 绘图控件，CMake 友好。 |
-| **Catch2** | `catch2` | 单测框架，提供 `Catch2::Catch2WithMain`。 |
-| **nlohmann_json** | `nlohmann-json` | JSON 解析，header-only。 |
-| **spdlog** | `spdlog` | 运行时日志。 |
-| **SQLite3** | `sqlite3`（可选，否则用 Qt `QSql`） | 持久化；本项目优先 Qt SQL。 |
+| **Qt 5.15（Core/Gui/Widgets/PrintSupport/SerialPort/Network/Sql）** | 独立套件 + `CMAKE_PREFIX_PATH` | LGPL 必须 SHARED；独立套件默认动态链接，契合 §4；不经 vcpkg 编译 |
+| **QCustomPlot 2.1.1** | 源码 vendored（`3rdparty/`） | 避免经 vcpkg 拉起 qtbase 导致重复编译 / 双 Qt 运行时冲突 |
+| **Catch2** | vcpkg（`catch2`） | 单测框架，提供 `Catch2::Catch2WithMain` |
+| **nlohmann_json** | vcpkg（`nlohmann-json`） | JSON 解析，header-only |
+| **spdlog** | vcpkg（`spdlog`） | 运行时日志 |
+| **SQLite3** | 随 Qt5::Sql（无需单独安装） | 持久化；本项目优先 Qt SQL |
 
 ### 2.1 落地步骤
 
@@ -70,32 +76,36 @@ git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg && bootstrap-vcpkg.bat        # Windows；Linux/macOS 用 ./bootstrap-vcpkg.sh
 ```
 
-**(2) 仓库根放 `vcpkg.json` 声明依赖**（manifest 模式，CMake 配置时 vcpkg 自动拉取/构建）
+**(2) 仓库根放 `vcpkg.json` 声明依赖（仅 vcpkg 管理的部分）**（manifest 模式，CMake 配置时 vcpkg 自动拉取/构建）
+
+> ⚠ **Qt 与 QCustomPlot 不在此处**：Qt 走独立套件（`CMAKE_PREFIX_PATH`），QCustomPlot 走源码 vendored（`3rdparty/`）。`vcpkg.json` 只声明经 vcpkg 引入的小库。
+
 ```json
 {
   "name": "enersentry",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "dependencies": [
-    "qt5-base",
-    "qt5-serialport",
-    "qcustomplot",
     "catch2",
     "nlohmann-json",
     "spdlog"
-  ],
-  "builtin-baseline": "<填入你锁定的 vcpkg commit SHA，用于版本固定>"
+  ]
 }
 ```
-> 端口名以 `vcpkg search <关键词>` 为准（如 `qcustomplot`、`qt5-serialport`）；`builtin-baseline` 建议填一个已知稳定的 vcpkg 提交 SHA，保证团队/CI 装的版本一致。
+> 端口名以 `vcpkg search <关键词>` 为准；如需锁定版本，可加 `"builtin-baseline": "<稳定的 vcpkg 提交 SHA>"`，保证团队/CI 装的版本一致（当前仓库未强制）。
 
-**(3) 配置时注入 vcpkg 工具链**
+**(3) 配置时同时注入两样东西**
+
+- `CMAKE_PREFIX_PATH` → 让 CMake 在独立 Qt 套件目录找到 Qt5（`find_package(Qt5 ...)`）；
+- `CMAKE_TOOLCHAIN_FILE` → 让 vcpkg 注入 Catch2 / nlohmann_json / spdlog 的查找路径。
+
 ```bash
 cmake -S . -B build ^
+  -DCMAKE_PREFIX_PATH="D:\HJL\qt\5.15.2\msvc2019_64" ^
   -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake ^
   -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build build --target ens_app
 ```
-> 一旦设了 `CMAKE_TOOLCHAIN_FILE`，vcpkg 会把所有依赖的 CMake 配置包（Qt5、qcustomplot、Catch2、nlohmann_json、spdlog）**自动注入查找路径**，无需再设 `CMAKE_PREFIX_PATH`。首次构建 Qt 等较重依赖较慢，**务必开启 vcpkg binary caching**（默认已启用本地缓存）复用已编产物。
+> Qt 经 `CMAKE_PREFIX_PATH` 解析，**不经 vcpkg 编译**，因此首次配置不会去编译 Qt（快）；vcpkg 仅提供三个小库，**务必开启 vcpkg binary caching**（默认已启用本地缓存）复用已编产物。实际项目用 `CMakePresets.json` 固化了上述变量，直接 `cmake --preset vs2022-debug` 即可。
 
 > 不论依赖怎么来，`ens_3rdparty` 这一个 INTERFACE 库都是**唯一的依赖收口点**（见 §4），业务代码永远只 `target_link_libraries(... PRIVATE ens_3rdparty)`，不关心依赖细节。
 
@@ -170,23 +180,27 @@ endif()
 
 ## 4. Step D — `ens_3rdparty` 接口库（依赖唯一收口）
 
-建 `cmake/Ens3rdparty.cmake`，把 §2 的所有依赖在这里一次性 `find_package`（vcpkg 提供 CMake 配置包），再装进一个 INTERFACE 库：
+建 `cmake/Ens3rdparty.cmake`，在这里一次性 `find_package` 各类依赖（Qt 经 `CMAKE_PREFIX_PATH`、小库经 vcpkg 注入、QCustomPlot 经 `add_subdirectory` vendored），再装进一个 INTERFACE 库：
 
 ```cmake
 # cmake/Ens3rdparty.cmake
-# 所有第三方依赖统一经 vcpkg 提供（manifest 模式，见仓库根 vcpkg.json）
-# vcpkg 通过 CMAKE_TOOLCHAIN_FILE 注入 find_package 所需的 CMake 配置包
+# 依赖分三类收口（见 ENS-DEV-ENV §1）：
+#   Qt5       —— 独立套件，由 CMAKE_PREFIX_PATH 解析（不经 vcpkg）
+#   Catch2 / nlohmann_json / spdlog —— vcpkg（CMAKE_TOOLCHAIN_FILE 注入）
+#   QCustomPlot —— 源码 vendored（add_subdirectory）
 add_library(ens_3rdparty INTERFACE)
 add_library(ens::3rdparty ALIAS ens_3rdparty)
 
-# —— Qt 5（vcpkg 端口 qt5-base + qt5-serialport）——
-find_package(Qt5 COMPONENTS Core Gui Widgets SerialPort Network REQUIRED)
+# —— Qt 5（独立套件，由 CMAKE_PREFIX_PATH 解析）——
+find_package(Qt5 COMPONENTS Core Gui Widgets PrintSupport SerialPort Network Sql REQUIRED)
 
 # —— 小库（vcpkg 端口）——
-find_package(QCustomPlot REQUIRED)      # 目标 qcustomplot::qcustomplot（端口名以 vcpkg search 为准）
 find_package(Catch2 REQUIRED)           # 目标 Catch2::Catch2WithMain
 find_package(nlohmann_json REQUIRED)    # 目标 nlohmann_json::nlohmann_json
 find_package(spdlog REQUIRED)           # 目标 spdlog::spdlog
+
+# —— QCustomPlot（源码 vendored，经 add_subdirectory 接入，不在 vcpkg）——
+# add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/qcustomplot)  # 见仓库实际 Ens3rdparty.cmake
 
 # —— 统一收口 ——
 target_link_libraries(ens_3rdparty INTERFACE
@@ -312,7 +326,7 @@ BUILD-0 绿了，按下面顺序接手业务（详细步骤/测试/参考文档�
 ## 8. 编码前最常见的 5 个坑
 
 1. **Qt 编译器与 MSVC 版本不匹配** → 链接报错或一运行就崩。先确认 Qt 包是 `msvc2019_64` 还是 `mingw81_64`，编译器跟着选。
-2. **没设 `CMAKE_TOOLCHAIN_FILE` 指向 vcpkg** → `find_package(Qt5/qcustomplot/...)` 全部失败。配置时务必 `-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake`；若不用 vcpkg 才需要 `CMAKE_PREFIX_PATH` 指到 Qt。
+2. **Qt 没经 `CMAKE_PREFIX_PATH`、小库没经 `CMAKE_TOOLCHAIN_FILE`** → `find_package(Qt5 ...)` 找不到 Qt 套件；`find_package(Catch2/nlohmann_json/spdlog)` 找不到 vcpkg 依赖。配置时务必同时设：`-DCMAKE_PREFIX_PATH=<Qt 套件目录>`（Qt）与 `-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake`（vcpkg 小库）；实际项目已固化在 `CMakePresets.json`。
 3. **`AUTOMOC` 没开** → 带 `Q_OBJECT` 的类链接报 `undefined reference to vtable for Xxx`。确认全局 `CMAKE_AUTOMOC=ON` 或 target 级 `set_target_properties(... PROPERTIES AUTOMOC ON)`。
 4. **SHARED Qt 但没部署 DLL** → 双击 exe 报「缺少 Qt5Core.dll」。开发期把 Qt `bin` 加 `PATH`，或 `windeployqt bin/ens_app.exe` 拷贝依赖。
 5. **vcpkg triplet 与编译器架构不匹配** → 如用 `x64-windows` 却配 32 位 MSVC/Qt，链接 ABI 错。统一 `x64-windows` + 64 位 MSVC/Qt（`msvc2019_64`）。
@@ -332,4 +346,4 @@ BUILD-0 绿了，按下面顺序接手业务（详细步骤/测试/参考文档�
 
 ---
 
-*本文基于 `ENS-DEV-ARCH` V（工程目录架构）、`ENS-DEV-GUIDE` V4.0（双轨开发步骤）及 `ENS-HLD/LLD/SIM` 全套设计汇总编制；依赖统一经 vcpkg（仓库根 vcpkg.json manifest + cmake/Ens3rdparty.cmake）引入，严格沿用上游 `ens_3rdparty` INTERFACE 库收口约定。*
+*本文基于 `ENS-DEV-ARCH` V（工程目录架构）、`ENS-DEV-GUIDE` V4.0（双轨开发步骤）及 `ENS-HLD/LLD/SIM` 全套设计汇总编制；依赖分三类引入（Qt 独立套件 + `CMAKE_PREFIX_PATH` / Catch2·nlohmann_json·spdlog 经 vcpkg / QCustomPlot 源码 vendored），统一由仓库根 `vcpkg.json` + `cmake/Ens3rdparty.cmake` 经 `ens_3rdparty` INTERFACE 库收口，与 `ENS-DEV-ENV §1` 一致。*

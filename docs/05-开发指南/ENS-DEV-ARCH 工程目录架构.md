@@ -249,12 +249,13 @@ apps/device_simulator/                      # ★ 测试程序（设备模拟与
 
 > 本节补全 §1/§2 树里「没展开但 Qt 工程必碰」的三类东西：**依赖从哪来、产物放哪、`.ui` 表单搁哪**。全部与开发指南 §6「`ens_3rdparty` INTERFACE 库 + vcpkg（仓库根 vcpkg.json）」「`CMAKE_RUNTIME_OUTPUT_DIRECTORY → bin/`」的既有约定一致。
 
-### 2.2.1 三方库（依赖统一经 vcpkg 引入）—— 不散落进 src/
+### 2.2.1 三方库（依赖分三类引入）—— 不散落进 src/
 
-- **总原则**：第三方依赖**统一经 vcpkg 引入**（manifest 模式：仓库根 `vcpkg.json` 声明依赖，`CMAKE_TOOLCHAIN_FILE` 指向 vcpkg 工具链），绝不在 `apps/ens_app/src/` 里塞 Qt / qcustomplot 源码。所有依赖经 `ens_3rdparty` INTERFACE 库 `target_link_libraries(... PRIVATE ens_3rdparty)` 统一透传（开发指南 §6 / ENS-DEV-BOOT §4）。
-- **依赖清单（全经 vcpkg）**：
-  - `qt5-base`、`qt5-serialport`（Qt5 Core/Gui/Widgets/SerialPort/Network）—— LGPL 必须 SHARED，vcpkg 默认即动态链接，正好契合 §4 决策。
-  - `qcustomplot`（绘图）、`catch2`（单测）、`nlohmann-json`（JSON）、`spdlog`（日志）、`sqlite3`（如需独立 SQLite，否则用 Qt `QSql`）。
+- **总原则**：第三方依赖**分三类引入**（决策见 `ENS-DEV-ENV §1`，与 `ENS-DEV-BOOT §2` 一致）——Qt 5.15 走独立套件（`CMAKE_PREFIX_PATH`）、Catch2 / nlohmann_json / spdlog 走 vcpkg、QCustomPlot 源码 vendored 进 `3rdparty/`，绝不在 `apps/ens_app/src/` 里塞 Qt / qcustomplot 源码。所有依赖经 `ens_3rdparty` INTERFACE 库 `target_link_libraries(... PRIVATE ens_3rdparty)` 统一透传（开发指南 §6 / ENS-DEV-BOOT §4）。
+- **依赖清单（按引入方式）**：
+  - **Qt 5.15（Core/Gui/Widgets/PrintSupport/SerialPort/Network/Sql）** → 独立套件 + `CMAKE_PREFIX_PATH`（**不经 vcpkg 编译**）；LGPL 必须 SHARED，独立套件默认即动态链接，契合 §4 决策。
+  - **QCustomPlot 2.1.1** → 源码 vendored 进 `3rdparty/`（避免经 vcpkg 拉起 qtbase 导致重复编译 / 双 Qt 运行时冲突）。
+  - `catch2`（单测）、`nlohmann-json`（JSON）、`spdlog`（日志）→ 经 vcpkg；`sqlite3` 不单独装，优先用 Qt `QSql`。
 - **仓库根 `3rdparty/` 仅放一类**：确需 vendored 的本地改版（如定制过的 qcustomplot 源码）→ `3rdparty/<libname>/`，由顶层 `CMakeLists.txt` 用 `add_subdirectory` 或 `FetchContent` override 接入，**仍不进 `src/`**；常规依赖不在此 vendored。
 - **LGPL 红线（⚠ 重要）**：Qt 是 LGPL 协议，必须 **SHARED 动态链接**。部署时 Qt 动态库（Qt5Core.dll / Qt5Widgets.dll / …）随 `ens_app.exe` 落在 `bin/`，**严禁把 Qt 静态编入 exe** 以规避 LGPL 反向工程义务——这条与 §4 的 SHARED 决策互为表里。
 
@@ -399,7 +400,7 @@ SHARED 模块符号导出宏，统一兼容 MSVC `__declspec` 与 GCC/Clang `vis
 | 混合（STATIC + SHARED） | `ens_app.exe`（~40MB）+ `channel.dll` + `business.dll` | 3 个文件 | 多站点生产部署 |
 
 - SHARED 模式：`CMAKE_RUNTIME_OUTPUT_DIRECTORY` → `bin/`；Linux 设 `RPATH=$ORIGIN`，让 exe 自动找到同目录 `.so`。
-- 第三方依赖统一经 `ens_3rdparty` INTERFACE 库封装（Qt5::Core/Widgets/SerialPort/Network、qcustomplot、nlohmann_json、SQLite::SQLite3、spdlog），统一经 vcpkg（仓库根 vcpkg.json manifest + cmake/Ens3rdparty.cmake）引入，禁止源码散落。
+- 第三方依赖统一经 `ens_3rdparty` INTERFACE 库封装（Qt5::Core/Widgets/PrintSupport/SerialPort/Network/Sql、qcustomplot::qcustomplot、Catch2::Catch2WithMain、nlohmann_json::nlohmann_json、spdlog::spdlog），按引入方式收口——Qt 经独立套件 `CMAKE_PREFIX_PATH`、小库经 vcpkg（仓库根 `vcpkg.json` manifest + `CMAKE_TOOLCHAIN_FILE`）、QCustomPlot 经 `3rdparty/` 源码 vendored，禁止源码散落。
 
 ---
 

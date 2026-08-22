@@ -294,7 +294,7 @@ FetchContent_MakeAvailable(QCustomPlot)
 | `ens::protocol` | STATIC | `ens::channel` | 协议引擎只依赖抽象通道接口，不可直接调用 Qt 平台 API |
 | `ens::datahub` | STATIC | `ens::protocol` | 数据中枢只读 `Sample` 接口，对寄存器地址无感知 |
 | `ens::business` | STATIC | `ens::datahub` | 业务层禁止直接访问通道，必须经数据中枢 |
-| `ens::ui` | STATIC | `ens::business`、Qt6::Widgets、qcustomplot | UI 层不引用任何平台 IO 或裸 Qt SerialPort |
+| `ens::ui` | STATIC | `ens::business`、Qt6::Widgets、qcustomplot::qcustomplot | UI 层不引用任何平台 IO 或裸 Qt SerialPort |
 | `ens::app` | EXECUTABLE | `ens::ui` | 应用入口，链接所有上层模块 |
 
 **2.6.3 第三方库统一封装为 INTERFACE 库**

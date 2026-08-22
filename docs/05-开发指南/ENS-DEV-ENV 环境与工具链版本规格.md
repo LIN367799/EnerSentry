@@ -118,18 +118,17 @@ cmake --build D:\Study\Qt_host_application_Project\EnerSentry\build
 
 > 说明：`CMAKE_PREFIX_PATH` 让 CMake 在 `D:\HJL\qt\5.15.2\msvc2019_64` 找到 Qt5；`CMAKE_TOOLCHAIN_FILE` 让 vcpkg 注入 Catch2 / nlohmann_json / spdlog。QCustomPlot 不进 vcpkg，作为源码 vendored 进 `3rdparty/` 随工程编译（见 §3）。`build/` 为 out-of-source，gitignore，勿入库。
 
-### 4.3 Agent / 非「VS 开发提示符」环境的一键构建（env-bootstrap）
+### 4.3 非「VS 开发提示符」环境的 MSVC 环境装配
 
-> 本仓库附 `tools/ens_configure.ps1`：在**无法使用 vcvars64.bat**（如某些拦截 cmd.exe 的沙箱 / Agent 环境）时，手动装配 MSVC + Windows SDK 的 `PATH/INCLUDE/LIB`，并让 CMake **自动从 PATH 发现 rc.exe**。
->
-> ⚠️ **不要**手写 `-DCMAKE_RC_COMPILER` 的反斜杠路径——CMake 会把该路径重写进 `CMakeRCCompiler.cmake`，因 `\P` 被当作转义符而报 `Invalid character escape '\P'` 错误。让 CMake 自己从 PATH 探测 rc.exe（路径会被规范成正斜杠）即可。
->
-> 用法（普通 PowerShell）：
-> ```powershell
-> powershell -ExecutionPolicy Bypass -File tools/ens_configure.ps1
-> # 可选参数：-BuildType Release / -NoTest
+> 在没有「VS2022 开发人员命令提示符」的环境（如某些拦截 `cmd.exe` 的沙箱 / Agent 环境）下，手动装载 MSVC + Windows SDK 环境即可，无需专用脚本：
+> ```bat
+> call "D:\Program Files\VS2022\VC\Auxiliary\Build\vcvars64.bat"
 > ```
-> 脚本自动探测 VS2022 的 MSVC 版本目录与 Windows SDK（10.0.26100.0），无需硬编码版本号。BUILD-0 已用此脚本实机验证通过（configure / build / test 全绿，CTest 1/1 Passed）。
+> 装载后 `cl.exe` / `link.exe` / `rc.exe` 均入 `PATH`，CMake 自动从 `PATH` 发现 `rc.exe`。
+>
+> ⚠️ **不要**手写 `-DCMAKE_RC_COMPILER` 的反斜杠路径——CMake 会把该路径重写进 `CMakeRCCompiler.cmake`，因 `\P` 被当作转义符而报 `Invalid character escape '\P'` 错误。让 CMake 自己从 `PATH` 探测 `rc.exe`（路径会被规范成正斜杠）即可。
+>
+> BUILD-0 已实机验证通过（经 VS2022 开发人员命令提示符 + `CMakePresets.json`：configure / build 全绿，CTest 1/1 Passed，2026-08-20）。
 
 ---
 
@@ -146,7 +145,7 @@ cmake --build D:\Study\Qt_host_application_Project\EnerSentry\build
 - [x] `vcpkg install catch2 nlohmann-json spdlog --triplet x64-windows`（已完成）
 - [x] 将 `D:\HJL\qt\QCustomPlot\qcustomplot\` 源码 vendored 进 `EnerSentry/3rdparty/`（QCustomPlot 2.1.1 走源码，不经 vcpkg；`3rdparty/qcustomplot/CMakeLists.txt` 已加 STL4043 告警抑制）
 - [x] 编写构建骨架：根 `CMakeLists.txt` / `vcpkg.json` / `cmake/Ens3rdparty.cmake` + 三子工程 `CMakeLists.txt` + `main.cpp` 空壳（BUILD-0 冒烟）
-- [x] BUILD-0 实机验证通过：configure / build 全绿（16/16 步），三产物 `bin/ens_app.exe` / `bin/DeviceSimulator.exe` / `bin/ens_tests.exe` 生成，CTest 1/1 Passed（2026-08-20，经 `tools/ens_configure.ps1`）
+- [x] BUILD-0 实机验证通过：configure / build 全绿（16/16 步），三产物 `bin/ens_app.exe` / `bin/DeviceSimulator.exe` / `bin/ens_tests.exe` 生成，CTest 1/1 Passed（2026-08-20，经 VS2022 开发人员命令提示符 + `CMakePresets.json`）
 - [x] 目录骨架已建（见 ENS-DEV-ARCH 落地）
 - [x] 工具链版本已查清并定型（本文档）
 

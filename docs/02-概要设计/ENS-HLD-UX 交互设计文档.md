@@ -30,7 +30,7 @@
 3. **关键交互流程的 Mermaid 时序图 / 状态图 / 流程图**（信号槽与交互流程）；
 4. 汇总 UI 性能优化的可落地伪代码与验收指标。
 
-> **铁律（架构约束，贯穿全文）**：`ens::ui` 仅依赖 `ens::business` 与 `qcustomplot`。UI 代码中**严禁** `new QSerialPort` / `QTcpSocket` / 直接调用 `IChannel` 读写；所有实时数据经 `IDataAccess` / `DataBus` 订阅，所有控制经 `ISBOManager` 下发。UI 线程**绝不**在工作线程上下文执行 `replot()` 或触碰 `QWidget` 子对象——跨线程一律 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`。
+> **铁律（架构约束，贯穿全文）**：`ens::ui` 仅依赖 `ens::business` 与 `qcustomplot::qcustomplot`。UI 代码中**严禁** `new QSerialPort` / `QTcpSocket` / 直接调用 `IChannel` 读写；所有实时数据经 `IDataAccess` / `DataBus` 订阅，所有控制经 `ISBOManager` 下发。UI 线程**绝不**在工作线程上下文执行 `replot()` 或触碰 `QWidget` 子对象——跨线程一律 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`。
 
 ---
 
@@ -220,7 +220,7 @@ QTableWidget::item[level="Info"]     { border-left: 4px solid var(--alarm-info);
 
 ## 3. 各模块详细 Widget 树状结构与 UI 组件说明
 
-> **模块隔离铁律**：UI 仅依赖 `ens::business` 与 `qcustomplot`。所有实时数据经 `IDataAccess` / `DataBus` 订阅，所有控制经 `ISBOManager` 下发。
+> **模块隔离铁律**：UI 仅依赖 `ens::business` 与 `qcustomplot::qcustomplot`。所有实时数据经 `IDataAccess` / `DataBus` 订阅，所有控制经 `ISBOManager` 下发。
 
 ### 3.1 ① 电站总览 OverviewWidget
 
@@ -1227,7 +1227,7 @@ bool DrillDownNavigator::eventFilter(QObject* watched, QEvent* event) {
 | 缓冲保护 | `pendingSamples` 硬上限 `PENDING_WARN_THRESHOLD=5000`，溢出滚动丢弃 | 缓冲区不溢出 |
 | 内存 | `setData` 复用 `QVector`（`std::swap` 零拷贝），无每帧堆分配；OpenGL 可选加速 | 72h 增长 < 5%（Q-03） |
 | 响应延迟 | 三级钻取 `< 200ms`；冷启动 `< 5s` 至总览可用 | Q-09/Q-10 |
-| 模块隔离 | `ens::ui` STATIC，仅依赖 `ens::business` + `qcustomplot`；禁止 `IChannel` 直调 | CMake 编译期守卫（不链 `ens::channel`） |
+| 模块隔离 | `ens::ui` STATIC，仅依赖 `ens::business` + `qcustomplot::qcustomplot`；禁止 `IChannel` 直调 | CMake 编译期守卫（不链 `ens::channel`） |
 | 跨线程 | 所有业务→UI 经 `Qt::QueuedConnection`；UI 不持有工作线程 `QTimer`/锁 | 无跨线程 QWidget 访问 |
 
 **CMake 构建约束（ens::ui STATIC）：**
@@ -1239,7 +1239,7 @@ target_sources(ens_ui PRIVATE
     HistoryTrendWidget.cpp ConfigWidget.cpp DiagWidget.cpp SBOControlWidget.cpp
     OverviewWidget.cpp ThemePalette.cpp DrillDownNavigator.cpp)
 target_include_directories(ens_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ens_ui PUBLIC ens::business qcustomplot)
+target_link_libraries(ens_ui PUBLIC ens::business qcustomplot::qcustomplot)
 # 严禁 target_link_libraries(ens_ui PUBLIC ens::channel)
 target_compile_features(ens_ui PUBLIC cxx_std_17)
 ```

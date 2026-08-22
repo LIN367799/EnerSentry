@@ -66,12 +66,12 @@ L5 在 EnerSentry 五层架构中处于最顶层，承担 **数据可视化呈�
 | `RealtimePlotWidget` | `RealtimePlotWidget` | 保持原样，为 ENS-LLD-503 内部实时渲染控件 |
 | `AlarmTableViewModel` | `AlarmCenterWidget` 内模型类 | 即 `AlarmTableViewModel`，隶属于 `AlarmCenterWidget` 的 `QAbstractTableModel` 子类 |
 
-> **命名铁律（交互设计文档 ENS-UI-PROTO-001）**：`ens::ui` 仅依赖 `ens::business`（抽象接口）与 `qcustomplot`；严禁出现 `new QSerialPort` / `QTcpSocket` / 直接 `IChannel` 引用；跨线程一律 `Qt::QueuedConnection`。
+> **命名铁律（交互设计文档 ENS-UI-PROTO-001）**：`ens::ui` 仅依赖 `ens::business`（抽象接口）与 `qcustomplot::qcustomplot`；严禁出现 `new QSerialPort` / `QTcpSocket` / 直接 `IChannel` 引用；跨线程一律 `Qt::QueuedConnection`。
 
 ### 0.4 构建目标与依赖
 
 - **CMake Target**：`ens::ui`（STATIC 库）。依据总纲 §3.3.2，**STATIC 模块严禁使用导出宏**（无 `ENS_UI_EXPORT` 之类符号）。
-- **依赖**：`ens::datahub`（抽象接口 `IDataAccess` + `DataBus`）、`ens::business`（抽象接口 `ISBOManager` / `AlarmEngine` 信号定义）、`qcustomplot`、`Qt5::Widgets`。
+- **依赖**：`ens::datahub`（抽象接口 `IDataAccess` + `DataBus`）、`ens::business`（抽象接口 `ISBOManager` / `AlarmEngine` 信号定义）、`qcustomplot::qcustomplot`、`Qt5::Widgets`。
 - **语言标准**：C++17 / Qt 5.15 LTS（兼容 Qt 6.x 信号槽语法）。
 
 ---

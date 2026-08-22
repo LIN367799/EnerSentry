@@ -2259,7 +2259,7 @@ void SboController::onLinkStatusChanged(uint32_t linkId, bool connected) {
 | `ens::protocol` | STATIC | `ens::channel` (PUBLIC) | 协议引擎只依赖抽象通道接口 |
 | `ens::datahub` | STATIC | `ens::protocol` (PRIVATE) | 数据中枢只读 `Sample` 接口 |
 | `ens::business` | SHARED | `ens::datahub` (PRIVATE) | 业务层禁止直接访问通道 |
-| `ens::ui` | STATIC | `ens::business`、Qt6::Widgets、qcustomplot | UI 层不引用平台 IO |
+| `ens::ui` | STATIC | `ens::business`、Qt6::Widgets、qcustomplot::qcustomplot | UI 层不引用平台 IO |
 | `ens::app` | EXECUTABLE | `ens::ui` | 应用入口 |
 
 **第三方库统一封装为 INTERFACE 库**（禁止业务代码直接 `#include <QtSerialPort>` 等）：

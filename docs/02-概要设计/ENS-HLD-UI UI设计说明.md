@@ -189,7 +189,7 @@ QScrollBar:vertical { background: var(--bg-base); width: var(--scrollbar-w); }
 
 ## 2. 7 大核心视图模块 UI 详细设计
 
-> **模块隔离铁律（工程约束）**：`ens::ui` 仅依赖 `ens::business` 与 `qcustomplot`。**严禁**在 UI 代码中 `new QSerialPort` / `QTcpSocket` / 直接调用 `IChannel` 读写；所有实时数据经 `IDataAccess` / `DataHub` 订阅，所有控制经 `ISBOManager` 下发。UI 线程**绝不**在工作线程上下文执行 `replot()` 或触碰 `QWidget` 的子对象——跨线程一律 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`。
+> **模块隔离铁律（工程约束）**：`ens::ui` 仅依赖 `ens::business` 与 `qcustomplot::qcustomplot`。**严禁**在 UI 代码中 `new QSerialPort` / `QTcpSocket` / 直接调用 `IChannel` 读写；所有实时数据经 `IDataAccess` / `DataHub` 订阅，所有控制经 `ISBOManager` 下发。UI 线程**绝不**在工作线程上下文执行 `replot()` 或触碰 `QWidget` 的子对象——跨线程一律 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`。
 
 ### 2.1 ① 电站总览 OverviewWidget
 
@@ -1150,7 +1150,7 @@ public:
 | 缓冲保护 | `pendingSamples` 硬上限 `PENDING_WARN_THRESHOLD=5000`，溢出滚动丢弃 | 缓冲区不溢出（PERF-T-04 附加检查） |
 | 内存 | `setData` 复用 `QVector`（`std::swap` 零拷贝），无每帧堆分配；OpenGL 可选加速 | 72h 增长 < 5%（Q-03） |
 | 响应延迟 | 三级钻取 `< 200ms`；冷启动 `< 5s` 至总览可用 | Q-09/Q-10 |
-| 模块隔离 | `ens::ui` STATIC，仅依赖 `ens::business` + `qcustomplot`；禁止 `IChannel` 直调 | CMake 编译期守卫（`target_link_libraries(ens_ui PUBLIC ens::business qcustomplot)`，**不链** `ens::channel`） |
+| 模块隔离 | `ens::ui` STATIC，仅依赖 `ens::business` + `qcustomplot::qcustomplot`；禁止 `IChannel` 直调 | CMake 编译期守卫（`target_link_libraries(ens_ui PUBLIC ens::business qcustomplot::qcustomplot)`，**不链** `ens::channel`） |
 | 跨线程 | 所有业务→UI 经 `Qt::QueuedConnection`；UI 不持有工作线程 `QTimer`/锁 | 无跨线程 QWidget 访问（规避 V1.4 跨线程 QObject 问题） |
 
 #### 4.3.1 CMake 构建约束（ens::ui STATIC）
@@ -1165,7 +1165,7 @@ target_sources(ens_ui PRIVATE
 target_include_directories(ens_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(ens_ui PUBLIC
     ens::business      # 仅业务接口层
-    qcustomplot)       # 图表库
+    qcustomplot::qcustomplot)       # 图表库
 # 注意：严禁 target_link_libraries(ens_ui PUBLIC ens::channel)
 target_compile_features(ens_ui PUBLIC cxx_std_17)
 ```
