@@ -1,0 +1,17 @@
+{
+  "name": "random_linkloss_stress",
+  "description": "随机断链压测：300s 窗口内对 PCS 从站（11~14）多次触发 FR-SIM-05c 断链 5~15s 后自动恢复。验证重连 COMM-09、三级熔断 ADR-13、SBO 断线清除 FR-CTRL-07。本脚本为确定性调度（固定时间表），保证可复现（NFR-TEST-01）；如需随机，可将 steps 改为 mode=random 并由 seed 驱动。",
+  "version": "1.0",
+  "seed": 20260814,
+  "randomMode": false,
+  "steps": [
+    {"t": 5000,   "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 11, "durationMs": 8000},
+    {"t": 25000,  "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 12, "durationMs": 12000},
+    {"t": 60000,  "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 13, "durationMs": 5000},
+    {"t": 90000,  "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 14, "durationMs": 15000},
+    {"t": 130000, "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 11, "durationMs": 10000},
+    {"t": 180000, "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 12, "durationMs": 7000},
+    {"t": 230000, "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 13, "durationMs": 11000},
+    {"t": 280000, "action": "INJECT",  "fault": "FR-SIM-05c", "scope": "pcs", "slave": 14, "durationMs": 9000}
+  ]
+}

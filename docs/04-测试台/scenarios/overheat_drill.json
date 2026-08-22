@@ -1,0 +1,32 @@
+{
+  "name": "overheat_drill",
+  "description": "整站过温演练：全部 16 簇最高温度在 60s 内由 35℃ 斜坡拉至 65℃（越限），同时置 alarmWord.bit0(OverTemp)=1；70s 后斜坡恢复至 35℃。验证告警引擎 FR-AL 与温度越限链路。",
+  "version": "1.0",
+  "seed": 20260814,
+  "steps": [
+    {
+      "t": 0,
+      "action": "INJECT",
+      "fault": "FR-SIM-05a",
+      "scope": "cluster",
+      "slave": "ALL",
+      "register": "MaxTemp",
+      "targetValue": 65.0,
+      "rampRate": 0.5,
+      "durationMs": 0,
+      "alarmBit": 0,
+      "note": "0.5℃/s × 60s = +30℃，35→65；durationMs=0 表示持续到显式 RECOVER"
+    },
+    {
+      "t": 70000,
+      "action": "RECOVER",
+      "fault": "FR-SIM-05a",
+      "scope": "cluster",
+      "slave": "ALL",
+      "register": "MaxTemp",
+      "targetValue": 35.0,
+      "rampRate": 0.5,
+      "durationMs": 0
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "name": "voltage_fault_drill",
+  "description": "电压越限演练：Rack-01 前 8 个单体电压在约 30s 内由 3.30V 斜坡拉至 3.65V（过压），同时置 alarmWord.bit1(CellOverV)=1；40s 后恢复至 3.30V。验证单体电压越限告警链路。",
+  "version": "1.0",
+  "seed": 20260814,
+  "steps": [
+    {
+      "t": 0,
+      "action": "INJECT",
+      "fault": "FR-SIM-05b",
+      "scope": "cell",
+      "slave": 1,
+      "register": "CellV",
+      "count": 8,
+      "targetValue": 3.65,
+      "rampRate": 0.012,
+      "durationMs": 0,
+      "alarmBit": 1,
+      "note": "0.012V/s × 30s ≈ +0.36V，3.30→3.65；count=8 表示 Rack-01 前 8 单体"
+    },
+    {
+      "t": 40000,
+      "action": "RECOVER",
+      "fault": "FR-SIM-05b",
+      "scope": "cell",
+      "slave": 1,
+      "register": "CellV",
+      "count": 8,
+      "targetValue": 3.30,
+      "rampRate": 0.012,
+      "durationMs": 0
+    }
+  ]
+}
