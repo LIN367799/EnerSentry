@@ -1,19 +1,8 @@
 # apps/ens_app/CMakeLists.txt
-# EnerSentry 上位机主程序 —— 五层模块化 Target 拓扑（依据 ENS-DEV-ARCH §2 / §4）
-#
-# 依赖收敛方向（上层依赖下层，层间只经抽象接口 / 信号槽）：
-#     ens_app(EXE) → ens::ui → ens::business → ens::datahub → ens::protocol → ens::channel
-#
-# 构建类型（混合构建，HLD §2.6.5 / ENS-DEV-ARCH §4）：
-#     ens::channel    SHARED   (channel.dll，因站热替换 + LGPL 合规)
-#     ens::protocol   STATIC   (热路径，内联进 exe)
-#     ens::datahub    STATIC   (热路径，内联进 exe)
-#     ens::business   SHARED   (business.dll，因站热替换 + LGPL 合规)
-#     ens::ui         STATIC   (热路径，内联进 exe)
-#     ens_app         EXECUTABLE
-#
-# 所有三方依赖（Qt5 / QCustomPlot / Catch2 / nlohmann_json / spdlog）经 ens::3rdparty INTERFACE 库统一透传。
-# 关键约定：STATIC 依赖 SHARED 必须用 PUBLIC，否则 exe 链接报 unresolved external（ENS-DEV-ARCH §4）。
+# EnerSentry 主程序：五层模块化 Target（ENS-DEV-ARCH §2/§4）。
+# 依赖边：ens_app(EXE) → ui → business → datahub → protocol → channel。
+# 构建类型：channel/business SHARED（热替换 + LGPL 合规），protocol/datahub/ui STATIC（热路径内联）。
+# 三方依赖统一经 ens::3rdparty 透传；STATIC 依赖 SHARED 必须 PUBLIC（防 unresolved external）。
 
 # ---------------- 内部导出宏头（ens/export.hpp），仅 SHARED 层需要 ----------------
 add_library(ens_export INTERFACE)
@@ -33,7 +22,8 @@ target_link_libraries(ens_channel PUBLIC ens::export ens::3rdparty)
 
 # ---------------- L2 协议处理层（STATIC） ----------------
 add_library(ens_protocol STATIC
-    src/protocol/protocol_anchor.cpp)
+    src/protocol/protocol_anchor.cpp
+    src/protocol/ModbusStreamAccumulator.cpp)   # Phase 1 L1：RTU/TCP 字节流累加器（§4.2.1）
 add_library(ens::protocol ALIAS ens_protocol)
 target_include_directories(ens_protocol PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/protocol)
