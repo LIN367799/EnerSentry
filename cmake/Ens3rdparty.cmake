@@ -29,7 +29,6 @@ target_link_libraries(ens_3rdparty INTERFACE
     nlohmann_json::nlohmann_json
     spdlog::spdlog)
 
-# 头文件搜索路径透传（SHARED 模块导出宏等）
+# 设备模拟器公共头搜索路径（app 侧导出宏头 ens/export.hpp 已独立为 ens::export，见 apps/ens_app/CMakeLists.txt）
 target_include_directories(ens_3rdparty INTERFACE
-    ${CMAKE_SOURCE_DIR}/apps/ens_app/include
     ${CMAKE_SOURCE_DIR}/apps/device_simulator/include)
