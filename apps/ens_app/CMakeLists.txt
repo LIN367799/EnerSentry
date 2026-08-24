@@ -27,6 +27,16 @@ target_include_directories(ens_channel PUBLIC
 # SHARED 自身编译期需 dllexport（仅 PRIVATE，不向消费者透传）
 target_compile_definitions(ens_channel PRIVATE ENS_BUILD_SHARED)
 target_link_libraries(ens_channel PUBLIC ens::export ens::3rdparty)
+# 运行时 Qt DLL 自足：windeployqt 不递归分析非 Qt DLL（ens_channel.dll）的 Qt 依赖，
+# 故本库 POST_BUILD 把实际用到的 Qt 模块 DLL 拷到输出目录（Network=2.1.3 起；SerialPort 预留 2.1.2）。
+foreach(_qtmod Network SerialPort)
+    if(TARGET Qt5::${_qtmod})
+        add_custom_command(TARGET ens_channel POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:Qt5::${_qtmod}>"
+                    "$<TARGET_FILE_DIR:ens_channel>/")
+    endif()
+endforeach()
 
 # ---------------- L2 协议处理层（STATIC） ----------------
 add_library(ens_protocol STATIC

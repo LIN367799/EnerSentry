@@ -12,6 +12,8 @@ add_executable(ens_tests
     unit/test_modbus_slave.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
+    integration/test_tcp_channel.cpp
+    integration/test_p1_closeout.cpp
     ../apps/device_simulator/src/core/crc16.cpp
     ../apps/device_simulator/src/core/mbap.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp

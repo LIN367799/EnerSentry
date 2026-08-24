@@ -12,8 +12,10 @@
 #include "sim/modbus_slave.h"
 
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace ens::sim {
 
@@ -34,6 +36,7 @@ public:
 private:
     void acceptLoop() noexcept;                       // accept 循环（主线程）
     void clientLoop(int clientFd) noexcept;           // 每连接一个 IO 线程
+    void dropAllClients() noexcept;                   // close() 时断开全部已接受连接
     static void boostThreadPriority() noexcept;       // HIGHEST 尽力而为
 
     std::string m_ip;
@@ -41,6 +44,8 @@ private:
     int         m_listenFd = -1;
     bool        m_running = false;
     std::thread m_acceptThread;
+    std::vector<int> m_clients;                       // 活动 client fd（close 时强制断开）
+    std::mutex       m_clientsMtx;
     SlaveRegs   m_regs;
     RequestHandler m_handler;
 };

@@ -5,6 +5,7 @@
 #include "core/mbap.h"
 
 #include <array>
+#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -132,11 +133,18 @@ bool ModbusTcpServer::open() noexcept {
 void ModbusTcpServer::close() noexcept {
     if (!m_running && m_listenFd < 0) return;       // 幂等
     m_running = false;
+    dropAllClients();                               // 强制断开已接受的连接（client 收 FIN）
     if (m_listenFd >= 0) {
         closeFd(m_listenFd);
         m_listenFd = -1;
     }
     if (m_acceptThread.joinable()) m_acceptThread.join();
+}
+
+void ModbusTcpServer::dropAllClients() noexcept {
+    std::lock_guard<std::mutex> lock(m_clientsMtx);
+    for (const int fd : m_clients) closeFd(fd);
+    m_clients.clear();
 }
 
 void ModbusTcpServer::setRequestHandler(RequestHandler cb) {
@@ -164,6 +172,10 @@ void ModbusTcpServer::acceptLoop() noexcept {
         if (clientFd < 0) {
             if (!m_running) break;                  // close() 关 listen 后正常退出
             continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_clientsMtx);
+            m_clients.push_back(clientFd);
         }
         std::thread(&ModbusTcpServer::clientLoop, this, clientFd).detach();
     }
@@ -205,6 +217,10 @@ void ModbusTcpServer::clientLoop(int clientFd) noexcept {
         if (!sendAll(clientFd, respPdu.data(), respPdu.size())) break;
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_clientsMtx);
+        m_clients.erase(std::remove(m_clients.begin(), m_clients.end(), clientFd), m_clients.end());
+    }
     closeFd(clientFd);
 }
 
