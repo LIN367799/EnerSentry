@@ -7,13 +7,17 @@
 
 #include <QSerialPortInfo>
 
+#include <algorithm>
+#include <utility>
+
 namespace ens::sim {
 
 RtuSlavePort::RtuSlavePort(std::string portName, uint32_t baud)
     : m_portName(std::move(portName)), m_baud(baud) {
-    // 帧间静默：>19200 bps 标准例外固定 1750µs；否则 bitsPerChar×3.5/baud（Modbus V1.02）
-    // 8N1：bitsPerChar = 8+0+1 = 9；115200 → 9×3.5/115200 ≈ 273µs，但按标准例外取 1750µs
-    m_interFrameMs = 2;                               // QTimer 最小精度，覆盖 1750µs 需求
+    // 帧间静默：>19200→1750µs（标准例外）；否则 8N1 的 bitsPerChar(9)×3.5/baud；QTimer 向上取整且最小 2ms
+    int delayUs = 1750;
+    if (baud <= 19200) delayUs = static_cast<int>((9 * 3500000LL) / baud);
+    m_interFrameMs = std::max(2, (delayUs + 999) / 1000);
 }
 
 RtuSlavePort::~RtuSlavePort() { close(); }
@@ -76,14 +80,14 @@ void RtuSlavePort::onFrameTimeout() {
 }
 
 void RtuSlavePort::processFrame(const QByteArray& frame) noexcept {
-    // RTU 帧最小 4 字节：addr + fc + data + crc(2)；CRC 低字节在前
+    // RTU 帧 ≥4B：addr + fc + data + crc(2，低字节在前)
     const size_t n = static_cast<size_t>(frame.size());
     if (n < 4) return;
 
     const uint8_t* p = reinterpret_cast<const uint8_t*>(frame.constData());
     const uint16_t calc = ens::core::crc16_modbus(p, n - 2);
     const uint16_t recv = static_cast<uint16_t>(p[n - 2] | (p[n - 1] << 8));
-    if (calc != recv) return;                         // CRC 失败：丢弃（对应 FR-SIM-05d 坏帧注入）
+    if (calc != recv) return;                         // CRC 失败丢弃（FR-SIM-05d 坏帧注入路径）
 
     // 请求 = addr + PDU（fc + data）
     const uint8_t* pdu = p + 1;

@@ -1,13 +1,11 @@
-// TcpChannel.cpp —— Phase 1 L1 2.1.3：TCP 通道实现（ENS-LLD-100 §3.3 / ENS-DEV-GUIDE §2A）。
-// 状态机：open() → connectToHost 异步 → Connected（重置退避）
-//        Connected --disconnected--> Reconnecting（指数退避+抖动）--timer--> connectToHost
-// 首次连接失败（ConnectionRefused）也进入退避重连（server 未启动时自动重试）。
+// TcpChannel.cpp —— 2.1.3 TCP 通道（ENS-LLD-100 §3.3）。状态机：
+// open→connectToHost（异步）→Connected（重置退避）→disconnected→退避重连→timer→connectToHost。
 #include "TcpChannel.h"
 
 #include <QTcpSocket>
+#include <QRandomGenerator>
 
 #include <algorithm>
-#include <cstdlib>
 #include <utility>
 
 #ifdef Q_OS_LINUX
@@ -26,12 +24,13 @@ bool TcpChannel::open(const ChannelConfig& cfg) {
         m_lastError = QStringLiteral("TcpChannel::open expects TCP config");
         return false;
     }
+    if (m_opened) close();                            // 幂等：重复 open 先复位
     m_tcpCfg = std::get<TcpConfig>(cfg.payload);
     m_reconnectBaseMs = cfg.reconnectBaseMs > 0 ? cfg.reconnectBaseMs : 1000;
     m_reconnectMaxMs  = cfg.reconnectMaxMs  > 0 ? cfg.reconnectMaxMs  : 30000;
     m_lastError.clear();
 
-    if (!m_socket) {                              // 首次或 close 后重建
+    if (!m_socket) {                                  // 首次或 close 后重建
         m_socket = new QTcpSocket(this);
         m_reconnectTimer = new QTimer(this);
         m_reconnectTimer->setSingleShot(true);
@@ -48,7 +47,7 @@ bool TcpChannel::open(const ChannelConfig& cfg) {
     m_opened = true;
     m_closed = false;
     m_backoffMs = 0;
-    m_socket->connectToHost(m_tcpCfg.host, m_tcpCfg.port);   // 异步，首次不经过退避
+    m_socket->connectToHost(m_tcpCfg.host, m_tcpCfg.port);   // 异步，首次不走退避
     return true;
 }
 
@@ -128,7 +127,8 @@ void TcpChannel::onReadyRead() {
     const QByteArray data = m_socket->readAll();
     if (data.isEmpty()) return;
     m_stats.bytesReceived.fetch_add(static_cast<uint64_t>(data.size()), std::memory_order_relaxed);
-    m_inBuf.append(data);                         // 暂存，供 read() 消费（信号/回调之后仍可取）
+    m_inBuf.append(data);
+    if (m_inBuf.size() > kMaxInBuf) m_inBuf.clear();   // 异常流量保护
     if (m_readCb) m_readCb(data);
     emit dataReceived(data);
 }
@@ -147,12 +147,15 @@ void TcpChannel::onErrorOccurred(QAbstractSocket::SocketError err) {
     m_lastError = m_socket ? m_socket->errorString() : QStringLiteral("socket error");
     if (m_errCb) m_errCb(m_lastError);
     emit errorOccurred(m_lastError);
-    // 未建立连接时的失败（如 server 未启动 ConnectionRefused）也要进入退避重连
-    if (m_opened && !m_closed &&
-        m_socket && m_socket->state() == QAbstractSocket::UnconnectedState) {
+    // 连接建立前的可恢复失败才退避重连；其余（HostNotFound 等）仅上报
+    if (!m_opened || m_closed || !m_socket ||
+        m_socket->state() != QAbstractSocket::UnconnectedState)
+        return;
+    if (err == QAbstractSocket::ConnectionRefusedError ||
+        err == QAbstractSocket::RemoteHostClosedError ||
+        err == QAbstractSocket::NetworkError) {
         scheduleReconnect();
     }
-    (void)err;
 }
 
 void TcpChannel::attemptReconnect() {
@@ -171,8 +174,9 @@ void TcpChannel::scheduleReconnect() noexcept {
         m_backoffMs = std::min(m_backoffMs * 2, m_reconnectMaxMs);
         if (m_backoffMs == 0) m_backoffMs = m_reconnectBaseMs;
     }
-    // ±10% 随机抖动（NFR-REL-02 工业增强，分散多链路重连峰值）
-    const double jitter = m_backoffMs * 0.1 * (std::rand() / double(RAND_MAX) * 2.0 - 1.0);
+    // ±10% 抖动（NFR-REL-02 分散多链路重连峰值；QRandomGenerator 线程安全，替代 std::rand）
+    const double jitter = m_backoffMs * 0.1 *
+        (QRandomGenerator::global()->generateDouble() * 2.0 - 1.0);
     m_reconnectTimer->start(std::max(1, m_backoffMs + static_cast<int>(jitter)));
 }
 

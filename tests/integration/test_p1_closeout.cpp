@@ -6,11 +6,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "common/test_helpers.h"
+
 #include <QByteArray>
-#include <QCoreApplication>
 #include <QDeadlineTimer>
-#include <QEventLoop>
-#include <QTimer>
 
 #include <array>
 #include <cstdint>
@@ -18,11 +17,10 @@
 #include <set>
 #include <vector>
 
-#include "core/mbap.h"
-#include "sim/modbus_tcp_server.h"
 #include "TcpChannel.h"
 #include "ModbusStreamAccumulator.h"
 #include "TransactionIdAllocator.h"
+#include "sim/modbus_tcp_server.h"
 
 using ens::channel::ChannelConfig;
 using ens::channel::ChannelType;
@@ -31,36 +29,11 @@ using ens::channel::TcpConfig;
 using ens::protocol::ModbusStreamAccumulator;
 using ens::protocol::TransactionIdAllocator;
 using ens::sim::ModbusTcpServer;
+using ens::test::SignalWaiter;
+using ens::test::appInstance;
+using ens::test::makeReadFrame;
 
 namespace {
-
-QCoreApplication* appInstance() {
-    static QCoreApplication* app = [] {
-        static int argc = 1;
-        static char arg0[] = "ens_tests";
-        static char* argv[] = {arg0, nullptr};
-        return new QCoreApplication(argc, argv);
-    }();
-    return app;
-}
-
-template <typename Sender, typename Signal>
-class SignalWaiter {
-public:
-    explicit SignalWaiter(Sender* sender, Signal signal) {
-        QObject::connect(sender, signal, &m_loop,
-                         [this] { m_signaled = true; m_loop.quit(); });
-    }
-    bool wait(int timeoutMs) {
-        QTimer::singleShot(timeoutMs, &m_loop, &QEventLoop::quit);
-        m_loop.exec();
-        return m_signaled;
-    }
-
-private:
-    QEventLoop m_loop;
-    bool m_signaled = false;
-};
 
 ChannelConfig tcpConfig(const ModbusTcpServer& server) {
     ChannelConfig cfg;
@@ -70,22 +43,6 @@ ChannelConfig tcpConfig(const ModbusTcpServer& server) {
     t.port = server.actualPort();
     cfg.payload = t;
     return cfg;
-}
-
-// 组 FC03 读请求帧（MBAP + PDU），完整 wire 帧
-std::vector<uint8_t> makeReadFrame(uint16_t tid, uint16_t addr, uint16_t qty) {
-    std::vector<uint8_t> frame;
-    ens::core::MbapHeader h;
-    h.transactionId = tid;
-    h.length = 6;
-    h.unitId = 1;
-    std::array<uint8_t, 7> mbap{};
-    ens::core::emit_mbap(mbap.data(), h);
-    frame.insert(frame.end(), mbap.begin(), mbap.end());
-    frame.insert(frame.end(), {0x03,
-                               static_cast<uint8_t>(addr >> 8), static_cast<uint8_t>(addr & 0xFF),
-                               static_cast<uint8_t>(qty >> 8), static_cast<uint8_t>(qty & 0xFF)});
-    return frame;
 }
 
 // 阻塞式收集 channel 接收流，直到累加器能提出 expectFrames 帧或超时；

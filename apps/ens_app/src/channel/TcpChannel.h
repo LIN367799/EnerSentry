@@ -1,11 +1,6 @@
-// TcpChannel.h —— Phase 1 L1 2.1.3：TCP 通道真实实现（ENS-LLD-100 §3.3）。
-// 关键语义：
-//   - open() 异步 connectToHost；连接/断线经 connectionChanged(bool) 上报
-//   - 断线指数退避重连：1→2→4→8→16→30s 封顶 + ±10% 随机抖动（COMM-09 / NFR-REL-02）
-//   - 内核 KeepAlive（SO_KEEPALIVE + Linux TCP_KEEPIDLE/INTVL/CNT）；应用级心跳在 L2 PollScheduler
-//   - write 非阻塞 hand-off：仅入 QTcpSocket 写缓冲即返回字节数；未连接返回 -1
-//   - close 幂等（stop 定时器 + abort + deleteLater）
-//   - 字节统计（bytesSent/bytesReceived）在通道层更新；请求/超时/CRC 计数留 L2（Phase 2）
+// TcpChannel.h —— 2.1.3 TCP 通道（ENS-LLD-100 §3.3）。
+// open 异步连接；断线指数退避重连（1→2→4→8→16→30s ±10% 抖动）；KeepAlive 加固；
+// write 非阻塞 hand-off；close 幂等。字节统计在此层，请求/超时计数留 L2。
 #pragma once
 
 #include "IChannel.h"
@@ -50,18 +45,20 @@ private:
     void scheduleReconnect() noexcept;
     void hardenKeepAlive() noexcept;
 
+    static constexpr int kMaxInBuf = 1 << 20;         // 接收缓冲上限（异常流量保护）
+
     QTcpSocket* m_socket = nullptr;
     QTimer*     m_reconnectTimer = nullptr;
     TcpConfig   m_tcpCfg{};
     ChannelStats m_stats;
     QString      m_lastError;
-    QByteArray   m_inBuf;                          // 接收缓冲：onReadyRead 存、read() 消费（同线程无锁）
-    WriteCompletedCallback m_pendingWriteCb;      // asyncWrite 的单次 pending 完成回调
-    int  m_backoffMs = 0;                          // 指数退避当前值（LLD §3.3.2）
-    int  m_reconnectBaseMs = 1000;                 // 退避初值（open 时取 cfg.reconnectBaseMs）
-    int  m_reconnectMaxMs  = 30000;                // 退避封顶（open 时取 cfg.reconnectMaxMs）
-    bool m_opened = false;                         // open() 已调用且未 close
-    bool m_closed = false;                         // close 幂等标志
+    QByteArray   m_inBuf;                            // 接收缓冲（IO 线程存、read() 取，单线程无锁）
+    WriteCompletedCallback m_pendingWriteCb;         // asyncWrite 单次 pending
+    int  m_backoffMs = 0;                            // 退避当前值（LLD §3.3.2）
+    int  m_reconnectBaseMs = 1000;                   // 退避初值（cfg.reconnectBaseMs）
+    int  m_reconnectMaxMs  = 30000;                  // 退避封顶（cfg.reconnectMaxMs）
+    bool m_opened = false;
+    bool m_closed = false;
 };
 
 }  // namespace ens::channel

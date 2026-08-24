@@ -11,6 +11,7 @@
 #include "sim/islave_transport.h"
 #include "sim/modbus_slave.h"
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -42,10 +43,11 @@ private:
     std::string m_ip;
     uint16_t    m_port = 0;
     int         m_listenFd = -1;
-    bool        m_running = false;
+    std::atomic<bool> m_running{false};               // close() 写、accept/client 线程读（防数据竞争）
     std::thread m_acceptThread;
     std::vector<int> m_clients;                       // 活动 client fd（close 时强制断开）
     std::mutex       m_clientsMtx;
+    std::mutex       m_handlerMtx;                    // 保护 m_handler（跨线程读写）
     SlaveRegs   m_regs;
     RequestHandler m_handler;
 };

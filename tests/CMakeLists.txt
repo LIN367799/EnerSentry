@@ -23,6 +23,7 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/rtu_slave_port.cpp)
 # ens::protocol 透传 channel/3rdparty（Catch2 + Qt 头经此注入）；core/sim 头经 device_simulator/src 解析
 target_include_directories(ens_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ../apps/device_simulator/src)
 target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol)
 # B3 起原生 socket（winsock2）：MSVC 下需显式链 ws2_32（Qt5::Network 也带，双保险）

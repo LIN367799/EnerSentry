@@ -44,9 +44,20 @@ bool SerialChannel::open(const ChannelConfig& cfg) {
             return false;
         }
         m_port->setBaudRate(m_serialCfg.baudRate);
-        m_port->setDataBits(QSerialPort::Data8);
-        m_port->setStopBits(QSerialPort::OneStop);
-        m_port->setParity(QSerialPort::NoParity);
+        switch (m_serialCfg.dataBits) {
+            case 5: m_port->setDataBits(QSerialPort::Data5); break;
+            case 6: m_port->setDataBits(QSerialPort::Data6); break;
+            case 7: m_port->setDataBits(QSerialPort::Data7); break;
+            default: m_port->setDataBits(QSerialPort::Data8); break;
+        }
+        m_port->setStopBits(m_serialCfg.stopBits >= 2 ? QSerialPort::TwoStop
+                                                     : QSerialPort::OneStop);
+        if (m_serialCfg.parity == QLatin1String("E"))
+            m_port->setParity(QSerialPort::EvenParity);
+        else if (m_serialCfg.parity == QLatin1String("O"))
+            m_port->setParity(QSerialPort::OddParity);
+        else
+            m_port->setParity(QSerialPort::NoParity);
         applyRs485Timing(m_serialCfg.baudRate, m_serialCfg.dataBits,
                          m_serialCfg.stopBits, m_serialCfg.parity);
 
@@ -127,7 +138,8 @@ void SerialChannel::onReadyRead() {
     const QByteArray data = m_port->readAll();
     if (data.isEmpty()) return;
     m_stats.bytesReceived.fetch_add(static_cast<uint64_t>(data.size()), std::memory_order_relaxed);
-    m_inBuf.append(data);                             // 暂存，供 read() 消费
+    m_inBuf.append(data);
+    if (m_inBuf.size() > kMaxInBuf) m_inBuf.clear();   // 异常流量保护
     if (m_readCb) m_readCb(data);
     emit dataReceived(data);
 }
@@ -155,16 +167,14 @@ void SerialChannel::onErrorOccurred(QSerialPort::SerialPortError err) {
 
 void SerialChannel::applyRs485Timing(int baudRate, int dataBits, int stopBits,
                                      const QString& parity) noexcept {
-    // Modbus Serial Line Protocol V1.02：>19200bps 固定 1.75ms 帧间静默；否则 bitsPerChar×3.5/baud
+    // >19200bps 标准例外 1750µs；否则 bitsPerChar×3.5/baud（Modbus V1.02）
     if (baudRate > 19200) {
         m_rs485DelayUs = 1750;
     } else {
         const int bitsPerChar = dataBits + (parity == QLatin1String("N") ? 0 : 1) + stopBits;
         m_rs485DelayUs = static_cast<int>((bitsPerChar * 3500000LL) / baudRate);
     }
-    // RS485 方向控制由驱动/硬件完成（Linux TIOCSRS485 delay_rts_after_send /
-    // Windows RTS_CONTROL_TOGGLE 或自动方向芯片）；com0com 虚拟串口全双工无需切换。
-    // **应用层绝不 usleep/QTimer 模拟静默**（LLD §3.2.2 关键约束）——m_rs485DelayUs 仅记录/供驱动。
+    // RS485 方向由驱动/硬件完成；应用层禁模拟静默（LLD §3.2.2）——delayUs 仅记录供驱动
 }
 
 }  // namespace ens::channel

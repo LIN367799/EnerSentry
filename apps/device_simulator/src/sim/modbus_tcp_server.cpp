@@ -6,6 +6,7 @@
 
 #include <array>
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
 #include <utility>
 
@@ -148,6 +149,7 @@ void ModbusTcpServer::dropAllClients() noexcept {
 }
 
 void ModbusTcpServer::setRequestHandler(RequestHandler cb) {
+    std::lock_guard<std::mutex> lock(m_handlerMtx);
     m_handler = std::move(cb);
 }
 
@@ -155,7 +157,8 @@ void ModbusTcpServer::boostThreadPriority() noexcept {
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);   // 失败忽略
 #else
-    if (nice(-10) == -1) { /* EPERM 忽略：非 root 尽力而为 */ }
+    errno = 0;                                          // nice 返回 -1 可能是成功（新值恰为 -1）
+    if (nice(-10) == -1 && errno != 0) { /* EPERM 忽略：非 root 尽力而为 */ }
 #endif
 }
 
@@ -191,16 +194,22 @@ void ModbusTcpServer::clientLoop(int clientFd) noexcept {
         if (!recvAll(clientFd, mbap.data(), mbap.size())) break;
 
         core::MbapHeader hdr;
-        if (!core::parse_mbap(mbap.data(), mbap.size(), hdr)) break;      // protocolId!=0 或长度异常
-        // MBAP length = unitId(1) + PDU 字节数；unitId 已随 7B 头读走，PDU 只需再读 length-1
+        if (!core::parse_mbap(mbap.data(), mbap.size(), hdr)) break;   // protocolId!=0 或长度异常
+        // length=unitId+PDU；unitId 已随 7B 头读走，PDU 只读 length-1（脏长度丢连接，TCP 无 hunt）
         if (hdr.length < 2 || static_cast<size_t>(hdr.length - 1) > pdu.size()) break;
-        const size_t pduLen = static_cast<size_t>(hdr.length - 1);        // 脏长度 → 丢弃连接（TCP 无 hunt）
+        const size_t pduLen = static_cast<size_t>(hdr.length - 1);
 
         if (!recvAll(clientFd, pdu.data(), pduLen)) break;
 
+        // handler 拷贝到局部再调用（持锁调用可能在 handler 内重入 server 造成死锁）
+        RequestHandler handler;
+        {
+            std::lock_guard<std::mutex> lock(m_handlerMtx);
+            handler = m_handler;
+        }
         std::vector<uint8_t> respPdu;
-        if (m_handler) {
-            respPdu = m_handler(std::vector<uint8_t>(pdu.data(), pdu.data() + pduLen));
+        if (handler) {
+            respPdu = handler(std::vector<uint8_t>(pdu.data(), pdu.data() + pduLen));
         } else {
             respPdu = dispatchRequest(m_regs, pdu.data(), pduLen);
         }

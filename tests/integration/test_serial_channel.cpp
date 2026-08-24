@@ -6,10 +6,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <QCoreApplication>
-#include <QEventLoop>
+#include "common/test_helpers.h"
+
 #include <QSerialPortInfo>
-#include <QTimer>
 
 #include <array>
 #include <cstdint>
@@ -26,36 +25,10 @@ using ens::channel::ChannelType;
 using ens::channel::SerialChannel;
 using ens::channel::SerialConfig;
 using ens::sim::RtuSlavePort;
+using ens::test::SignalWaiter;
+using ens::test::appInstance;
 
 namespace {
-
-QCoreApplication* appInstance() {
-    static QCoreApplication* app = [] {
-        static int argc = 1;
-        static char arg0[] = "ens_tests";
-        static char* argv[] = {arg0, nullptr};
-        return new QCoreApplication(argc, argv);
-    }();
-    return app;
-}
-
-template <typename Sender, typename Signal>
-class SignalWaiter {
-public:
-    explicit SignalWaiter(Sender* sender, Signal signal) {
-        QObject::connect(sender, signal, &m_loop,
-                         [this] { m_signaled = true; m_loop.quit(); });
-    }
-    bool wait(int timeoutMs) {
-        QTimer::singleShot(timeoutMs, &m_loop, &QEventLoop::quit);
-        m_loop.exec();
-        return m_signaled;
-    }
-
-private:
-    QEventLoop m_loop;
-    bool m_signaled = false;
-};
 
 bool portExists(const QString& name) {
     for (const auto& info : QSerialPortInfo::availablePorts())
