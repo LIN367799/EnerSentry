@@ -11,8 +11,16 @@ target_include_directories(ens_export INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # ---------------- L1 通信接入层（SHARED） ----------------
+# Phase 1 L1 2.1.1：IChannel/ChannelConfig/ChannelStats + SerialChannel/TcpChannel 子类骨架。
+# Q_OBJECT 头必须列在 sources 让 AUTOMOC 处理（生成 moc_<class>.cpp 注入元对象代码）。
 add_library(ens_channel SHARED
-    src/channel/channel_anchor.cpp)
+    src/channel/IChannel.h
+    src/channel/ChannelConfig.h
+    src/channel/ChannelStats.h
+    src/channel/SerialChannel.h
+    src/channel/SerialChannel.cpp
+    src/channel/TcpChannel.h
+    src/channel/TcpChannel.cpp)
 add_library(ens::channel ALIAS ens_channel)
 target_include_directories(ens_channel PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/channel)
