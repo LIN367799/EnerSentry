@@ -14,10 +14,13 @@ add_executable(ens_tests
     integration/test_modbus_tcp_loopback.cpp
     integration/test_tcp_channel.cpp
     integration/test_p1_closeout.cpp
+    integration/test_serial_channel.cpp
     ../apps/device_simulator/src/core/crc16.cpp
     ../apps/device_simulator/src/core/mbap.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp
-    ../apps/device_simulator/src/sim/modbus_tcp_server.cpp)
+    ../apps/device_simulator/src/sim/modbus_tcp_server.cpp
+    ../apps/device_simulator/src/sim/rtu_slave_port.h
+    ../apps/device_simulator/src/sim/rtu_slave_port.cpp)
 # ens::protocol 透传 channel/3rdparty（Catch2 + Qt 头经此注入）；core/sim 头经 device_simulator/src 解析
 target_include_directories(ens_tests PRIVATE
     ../apps/device_simulator/src)
