@@ -39,9 +39,14 @@ foreach(_qtmod Network SerialPort)
 endforeach()
 
 # ---------------- L2 协议处理层（STATIC） ----------------
+# Phase 2 3.1.1/3.1.2：CRC-16/MODBUS 查表 + ModbusFrame 组帧/拆帧（LLD-100 §4.1）。
+# Phase 1 L1:  RTU/TCP 字节流累加器（§4.2.1）。
+# 后续 3.1.3 ModbusEngine / 3.1.4 PollScheduler / 3.1.5 PointTable 落 .cpp 时继续 append。
 add_library(ens_protocol STATIC
     src/protocol/protocol_anchor.cpp
-    src/protocol/ModbusStreamAccumulator.cpp)   # Phase 1 L1：RTU/TCP 字节流累加器（§4.2.1）
+    src/protocol/ModbusStreamAccumulator.cpp
+    src/protocol/Crc16.cpp
+    src/protocol/ModbusFrame.cpp)
 add_library(ens::protocol ALIAS ens_protocol)
 target_include_directories(ens_protocol PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/protocol)

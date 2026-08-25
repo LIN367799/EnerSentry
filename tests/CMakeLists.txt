@@ -8,8 +8,11 @@ add_executable(ens_tests
     unit/test_txid_allocator.cpp
     unit/test_accumulator.cpp
     unit/test_crc16.cpp
+    unit/test_crc16_master.cpp
     unit/test_mbap.cpp
     unit/test_modbus_slave.cpp
+    unit/test_modbus_frame.cpp
+    unit/test_sample.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_tcp_channel.cpp
@@ -22,9 +25,11 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/rtu_slave_port.h
     ../apps/device_simulator/src/sim/rtu_slave_port.cpp)
 # ens::protocol 透传 channel/3rdparty（Catch2 + Qt 头经此注入）；core/sim 头经 device_simulator/src 解析
+# 主程序协议侧（apps/ens_app/src/{protocol,datahub}）通过 datahub/Sample.h + protocol/{Crc16,ModbusFrame}.h 取值
 target_include_directories(ens_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ../apps/device_simulator/src)
+    ../apps/device_simulator/src
+    ../apps/ens_app/src)
 target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol)
 # B3 起原生 socket（winsock2）：MSVC 下需显式链 ws2_32（Qt5::Network 也带，双保险）
 if(WIN32)

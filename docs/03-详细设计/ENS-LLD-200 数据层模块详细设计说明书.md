@@ -241,6 +241,10 @@ static_assert(std::atomic<Sample>::is_always_lock_free,
 ```
 
 > **边界场景处理**：若平台为 32 位 x86 或 ARMv7，`std::atomic<Sample>::is_always_lock_free` 为 `false`，`static_assert` 在**编译期**直接失败，强制开发者改用 8 字节紧凑结构（`uint32_t timestamp` + `uint32_t pointId` + `float value`）或引入 `Sequence` 版本号（见 §3.5.3），杜绝"静默退化为内部互斥锁导致优先级反转"。
+>
+> **MSVC 14.x constexpr 保守补充（V2.1 增量补丁）**：MSVC 14.x x86-64 上 `std::atomic<Sample>::is_always_lock_free` 返回 `false` **即便运行时 `is_lock_free()==true`**（cmpxchg16b 硬证据）。此为编译器 constexpr 保守策略，不属于上述"必须 fallback"语义。修复：编译期仅保留 `sizeof(Sample)==16` 强约束；`is_always_lock_free` 语义由 Tier 1 单测 `test_sample.cpp::"sample: std::atomic<Sample> runtime lock-free check"` 在运行期强制执行。GCC / Clang / Apple Silicon 等真 lock-free 平台仍受 constexpr 兜底（未删断言,但仅作为隐式文档契约）。
+>
+> **MSVC stdlib atomic<U> 兜底已知限制（V2.1 增量补丁）**：实测 MSVC 14.44 x86-64 上 `std::atomic<Sample>::is_lock_free() == false`（**非** constexpr 误报，而是 stdlib 默认 critical section 兜底）。这是 MSVC 标准库实现策略（user-defined type 上 std::atomic<U> 默认锁化，避免对所有类型走 cmpxchg128 路径）。**Phase 2 (3.1.6) 仅固化契约**，不要求 `std::atomic<Sample>` 真 lock-free；待 Phase 4.x 引入 `RingBuffer<Sample>` / `L1SnapshotStore` 时，由 Win32 `_InterlockedCompareExchange128` / `std::atomic_ref` 等内建替代，达成真 lock-free。GCC / Clang 上 `std::atomic<Sample>` 即便走标准库也是 lock-free，无此 limitation。
 
 ### 3.2 无锁环形缓冲区模板 `RingBuffer<T>`
 
