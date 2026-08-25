@@ -41,17 +41,22 @@ endforeach()
 # ---------------- L2 协议处理层（STATIC） ----------------
 # Phase 2 3.1.1/3.1.2：CRC-16/MODBUS 查表 + ModbusFrame 组帧/拆帧（LLD-100 §4.1）。
 # Phase 2 3.1.5：PointTable 点表解析器（§4.4）。
+# Phase 2 3.1.3：ModbusEngine 协议语义核心（§4.2.2 + 用户截图 V2：Qt signal/slot + moveToThread）。
 # Phase 1 L1:  RTU/TCP 字节流累加器（§4.2.1）。
-# 后续 3.1.3 ModbusEngine / 3.1.4 PollScheduler 落 .cpp 时继续 append。
+# 后续 3.1.4 PollScheduler 落 .cpp 时继续 append。
 add_library(ens_protocol STATIC
     src/protocol/protocol_anchor.cpp
     src/protocol/ModbusStreamAccumulator.cpp
     src/protocol/Crc16.cpp
     src/protocol/ModbusFrame.cpp
-    src/protocol/PointTable.cpp)
+    src/protocol/PointTable.cpp
+    src/protocol/ModbusEngine.cpp)
 add_library(ens::protocol ALIAS ens_protocol)
 target_include_directories(ens_protocol PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/protocol)
+# PRIVATE include channel — ModbusEngine.cpp 实现依赖 IChannel 头但其 API 不应被协议层消费者看到
+target_include_directories(ens_protocol PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/channel)
 target_link_libraries(ens_protocol PUBLIC ens::channel ens::3rdparty)
 
 # ---------------- L3 数据中枢层（STATIC） ----------------

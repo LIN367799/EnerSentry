@@ -4,6 +4,7 @@
 # loopback 用例实证"测试台 CRC 方言 == 主程序 CRC 方言"（§2C CRC 方言行）。
 # B3 起追加 src/sim（从站 + TCP server），Tier 3 在测试进程内起真实 socket 通路（无需外部工具）。
 add_executable(ens_tests
+    main.cpp
     unit/test_sanity.cpp
     unit/test_txid_allocator.cpp
     unit/test_accumulator.cpp
@@ -12,6 +13,7 @@ add_executable(ens_tests
     unit/test_mbap.cpp
     unit/test_modbus_slave.cpp
     unit/test_modbus_frame.cpp
+    unit/test_modbus_engine.cpp
     unit/test_pointtable.cpp
     unit/test_register_bank.cpp
     unit/test_sample.cpp
@@ -33,7 +35,7 @@ target_include_directories(ens_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ../apps/device_simulator/src
     ../apps/ens_app/src)
-target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol)
+target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol Catch2::Catch2)
 # B3 起原生 socket（winsock2）：MSVC 下需显式链 ws2_32（Qt5::Network 也带，双保险）
 if(WIN32)
     target_link_libraries(ens_tests PRIVATE ws2_32)

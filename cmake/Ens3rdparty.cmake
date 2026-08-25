@@ -10,7 +10,9 @@ add_library(ens::3rdparty ALIAS ens_3rdparty)
 find_package(Qt5 COMPONENTS Core Gui Widgets PrintSupport SerialPort Network Sql REQUIRED)
 
 # 轻量库：vcpkg 经 CMAKE_TOOLCHAIN_FILE 注入查找路径
-find_package(Catch2 CONFIG REQUIRED)        # Catch2::Catch2WithMain
+find_package(Catch2 CONFIG REQUIRED)        # Catch2::Catch2(不带 main) + Catch2::Catch2WithMain
+# 注意:ens_tests 用 tests/main.cpp 自建 main() 注册 Q_DECLARE_METATYPE/qRegisterMetaType,
+#      所以这里同时提供两个 target — ens_tests 显式链 Catch2::Catch2,其他可按需。
 find_package(nlohmann_json CONFIG REQUIRED) # nlohmann_json::nlohmann_json
 find_package(spdlog CONFIG REQUIRED)        # spdlog::spdlog
 
@@ -25,7 +27,7 @@ target_link_libraries(ens_3rdparty INTERFACE
     Qt5::Network
     Qt5::Sql
     qcustomplot::qcustomplot
-    Catch2::Catch2WithMain
+    # Catch2 不在 INTERFACE 中强制链入 — 调用方按需选 Catch2 / Catch2WithMain
     nlohmann_json::nlohmann_json
     spdlog::spdlog)
 
