@@ -48,10 +48,12 @@ namespace {
 //   实际传入的路径变成乱码。运行期 std::filesystem::path 拼接不受此影响。
 // 测试用 L"..." 宽字符串构造 path,绕开 std::filesystem::path(char*) 走 system code page 转换;
 // 多个候选相对路径覆盖 ctest (cwd=build/vs2022-debug/tests) / IDE 直接运行 (cwd=项目根) 两种场景。
-// ctest cwd 回溯三次到项目根;IDE cwd 即项目根。
+// CMake configure 期 file(COPY) 把 sample.json 部署到 ${CMAKE_BINARY_DIR}/test_data/
+// (ctest cwd 二层回溯到此处);旧路径 bin/Debug/test_data/ 作为兼容保留。
 constexpr const wchar_t* kSampleJsonCandidates[] = {
     L"test_data/sim_pointtable_sample.json",                    // 项目根 cwd(IDE / IDE 终端)
-    L"../../../bin/Debug/test_data/sim_pointtable_sample.json", // ctest cwd=build/vs2022-debug/tests
+    L"../test_data/sim_pointtable_sample.json",                  // ctest cwd=build/vs2022-debug/tests(走 CMake file(COPY) 部署)
+    L"../../../bin/Debug/test_data/sim_pointtable_sample.json", // ctest 旧路径(POST_BUILD 部署)
     L"bin/Debug/test_data/sim_pointtable_sample.json",           // 备用(项目根 cwd)
 };
 

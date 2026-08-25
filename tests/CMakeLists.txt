@@ -13,6 +13,7 @@ add_executable(ens_tests
     unit/test_modbus_slave.cpp
     unit/test_modbus_frame.cpp
     unit/test_pointtable.cpp
+    unit/test_register_bank.cpp
     unit/test_sample.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
@@ -21,6 +22,7 @@ add_executable(ens_tests
     integration/test_serial_channel.cpp
     ../apps/device_simulator/src/core/crc16.cpp
     ../apps/device_simulator/src/core/mbap.cpp
+    ../apps/device_simulator/src/sim/register_bank.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp
     ../apps/device_simulator/src/sim/modbus_tcp_server.cpp
     ../apps/device_simulator/src/sim/rtu_slave_port.h
@@ -42,14 +44,13 @@ endif()
 # 避免 std::filesystem::path + 中文路径 + MSVC system code page 的三重坑:
 #   1) CMake target_compile_definitions 注入含中文路径 → MSVC 字符串字面量截断
 #   2) std::filesystem::path::string()/wstring() → system_error "No mapping for Unicode..."
-# configure_file 在 build 期执行,绕开所有运行期 + 编译期路径编码问题。
-add_custom_command(TARGET ens_tests POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:ens_tests>/test_data
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json"
-            "$<TARGET_FILE_DIR:ens_tests>/test_data/sim_pointtable_sample.json"
-    COMMENT "Deploying sim_pointtable_sample.json to test runtime directory")
+#
+# 用 file(COPY ...) 在 configure 期执行(非 POST_BUILD 命令),避免 cmd.exe 把含"测试台"
+# 的源路径按 GBK 编码后识别为 `"` 终结符,导致 CatchAddTests.cmake 解析 ens_tests-b12d07c
+# _tests.cmake 失败。file(COPY) 走 CMake 内部 API,路径 UTF-16 直传,完全绕开 shell 编码层。
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data)
+file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json"
+     DESTINATION ${CMAKE_BINARY_DIR}/test_data)
 
 include(Catch)
 catch_discover_tests(ens_tests)
