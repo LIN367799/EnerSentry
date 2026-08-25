@@ -15,6 +15,7 @@ add_executable(ens_tests
     unit/test_modbus_frame.cpp
     unit/test_modbus_engine.cpp
     unit/test_pointtable.cpp
+    unit/test_point_generator.cpp
     unit/test_register_bank.cpp
     unit/test_sample.cpp
     integration/test_modbus_loopback.cpp
@@ -24,7 +25,10 @@ add_executable(ens_tests
     integration/test_serial_channel.cpp
     ../apps/device_simulator/src/core/crc16.cpp
     ../apps/device_simulator/src/core/mbap.cpp
+    ../apps/device_simulator/src/core/point_table.cpp
     ../apps/device_simulator/src/sim/register_bank.cpp
+    ../apps/device_simulator/src/sim/sim_config.cpp
+    ../apps/device_simulator/src/sim/point_generator.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp
     ../apps/device_simulator/src/sim/modbus_tcp_server.cpp
     ../apps/device_simulator/src/sim/rtu_slave_port.h

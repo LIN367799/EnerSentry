@@ -5,7 +5,10 @@ add_executable(DeviceSimulator
     src/main_gui.cpp
     src/core/crc16.cpp
     src/core/mbap.cpp
-    src/sim/register_bank.cpp                # Track B B2：多从站 RCU 快照库（LLD-SIM §4.4 / §5.2）
+    src/core/point_table.cpp
+    src/sim/register_bank.cpp
+    src/sim/sim_config.cpp
+    src/sim/point_generator.cpp
     src/sim/modbus_slave.cpp
     src/sim/modbus_tcp_server.cpp
     src/sim/rtu_slave_port.h
