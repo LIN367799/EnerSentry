@@ -12,6 +12,7 @@ add_executable(ens_tests
     unit/test_mbap.cpp
     unit/test_modbus_slave.cpp
     unit/test_modbus_frame.cpp
+    unit/test_pointtable.cpp
     unit/test_sample.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
@@ -25,7 +26,7 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/rtu_slave_port.h
     ../apps/device_simulator/src/sim/rtu_slave_port.cpp)
 # ens::protocol 透传 channel/3rdparty（Catch2 + Qt 头经此注入）；core/sim 头经 device_simulator/src 解析
-# 主程序协议侧（apps/ens_app/src/{protocol,datahub}）通过 datahub/Sample.h + protocol/{Crc16,ModbusFrame}.h 取值
+# 主程序协议侧（apps/ens_app/src/{protocol,datahub}）通过 datahub/Sample.h + protocol/{Crc16,ModbusFrame,PointTable}.h 取值
 target_include_directories(ens_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ../apps/device_simulator/src
@@ -35,6 +36,20 @@ target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol)
 if(WIN32)
     target_link_libraries(ens_tests PRIVATE ws2_32)
 endif()
+
+# 把 sim_pointtable_sample.json 拷贝到 ens_tests 输出目录的 test_data/ 下。
+# 这样 test_pointtable.cpp 可以用相对路径 "test_data/sim_pointtable_sample.json" 加载,
+# 避免 std::filesystem::path + 中文路径 + MSVC system code page 的三重坑:
+#   1) CMake target_compile_definitions 注入含中文路径 → MSVC 字符串字面量截断
+#   2) std::filesystem::path::string()/wstring() → system_error "No mapping for Unicode..."
+# configure_file 在 build 期执行,绕开所有运行期 + 编译期路径编码问题。
+add_custom_command(TARGET ens_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:ens_tests>/test_data
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json"
+            "$<TARGET_FILE_DIR:ens_tests>/test_data/sim_pointtable_sample.json"
+    COMMENT "Deploying sim_pointtable_sample.json to test runtime directory")
 
 include(Catch)
 catch_discover_tests(ens_tests)
