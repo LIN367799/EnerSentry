@@ -16,10 +16,12 @@ add_executable(ens_tests
     unit/test_modbus_engine.cpp
     unit/test_pointtable.cpp
     unit/test_point_generator.cpp
+    unit/test_poll_scheduler.cpp
     unit/test_register_bank.cpp
     unit/test_sample.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
+    integration/test_modbus_engine_loopback.cpp
     integration/test_tcp_channel.cpp
     integration/test_p1_closeout.cpp
     integration/test_serial_channel.cpp
