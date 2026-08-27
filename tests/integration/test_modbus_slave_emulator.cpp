@@ -273,6 +273,34 @@ TEST_CASE("modbus_dispatch: 3 FC01/02/03/04/05/06/0F/10 full FC coverage",
         REQUIRE(r.has_value());
         REQUIRE(r->bytes[0] == 0x10);
     }
+    // ── 越界 / 非法值 → 异常码(P2-12 协议合规)──
+    // FC03 读越界(holding 128,addr=127 qty=2 超界)→ 0x02
+    {
+        auto pdu = makePdu(0x03, 127, 2);
+        auto r = dispatchBySlaveId(1, bank, slaves, pdu.data(), pdu.size());
+        REQUIRE(r.has_value());
+        REQUIRE(r->bytes[0] == 0x83);      // FC|0x80
+        REQUIRE(r->bytes[1] == 0x02);      // ILLEGAL DATA ADDRESS
+        REQUIRE(r->exception.has_value());
+    }
+    // FC06 写越界(holding 128,addr=200)→ 0x02
+    {
+        auto pdu = makePdu(0x06, 200, 0xBEEF);
+        auto r = dispatchBySlaveId(1, bank, slaves, pdu.data(), pdu.size());
+        REQUIRE(r.has_value());
+        REQUIRE(r->bytes[0] == 0x86);
+        REQUIRE(r->bytes[1] == 0x02);
+        REQUIRE(r->exception.has_value());
+    }
+    // FC05 非法 value(非 0xFF00/0x0000)→ 0x03 ILLEGAL DATA VALUE
+    {
+        auto pdu = makePdu(0x05, 0, 0x1234);
+        auto r = dispatchBySlaveId(1, bank, slaves, pdu.data(), pdu.size());
+        REQUIRE(r.has_value());
+        REQUIRE(r->bytes[0] == 0x85);
+        REQUIRE(r->bytes[1] == 0x03);
+        REQUIRE(r->exception.has_value());
+    }
     // 未注册 slave → nullopt
     {
         auto pdu = makePdu(0x03, 0, 1);

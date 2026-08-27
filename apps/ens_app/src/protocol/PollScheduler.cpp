@@ -7,9 +7,7 @@
 namespace ens::protocol {
 
 namespace {
-// 静态启动时间锚点 + 测试偏移共同决定 nowMs()。
-// 多线程安全:steady_clock::now() 本身是 thread-safe 的;
-// m_clockOffsetMs 写由 advanceClock 单线程做(测试入口),读无并发问题。
+// 静态启动锚点 + 测试偏移(advanceClock)共同决定 nowMs()。
 const auto kBootAnchor = std::chrono::steady_clock::now();
 }
 
@@ -20,7 +18,7 @@ PollScheduler::~PollScheduler() = default;
 int64_t PollScheduler::nowMs() const noexcept {
     using namespace std::chrono;
     const auto since = duration_cast<milliseconds>(steady_clock::now() - kBootAnchor).count();
-    return since + m_clockOffsetMs;
+    return since + m_clockOffsetMs.load();
 }
 
 void PollScheduler::setLinkParams(uint8_t linkId, const LinkParams& p) {
@@ -62,11 +60,11 @@ PollTask PollScheduler::dequeueNext(uint8_t linkId) noexcept {
     }
 
     const int limit   = link.params.maxConsecutivePreempt;
-    const int sboLmit = link.params.maxConsecutiveSboBurst;
+    const int sboLimit = link.params.maxConsecutiveSboBurst;
 
     // 1. SBO 风暴防护
     if (!link.highPriorityQueue.empty()) {
-        if (link.consecutiveSboCount >= sboLmit && !link.normalQueue.empty()) {
+        if (link.consecutiveSboCount >= sboLimit && !link.normalQueue.empty()) {
             link.consecutiveSboCount   = 0;
             link.consecutivePreemptCount = 0;
             auto t = link.normalQueue.front(); link.normalQueue.pop_front();
@@ -139,7 +137,9 @@ void PollScheduler::onResponseReceived(uint8_t slaveId, bool success) noexcept {
                 emit slaveDegraded(slaveId, s.consecutiveFailures);
             }
         } else if (s.consecutiveFailures >= 8) {
-            const bool wasNotIsolated = (s.health != SlaveHealth::ISOLATED);
+            // PROBING 失败回 ISOLATED 时不重复计数/发信号(避免每次探测失败刷屏)
+            const bool wasNotIsolated = (s.health != SlaveHealth::ISOLATED &&
+                                         s.health != SlaveHealth::PROBING);
             s.health = SlaveHealth::ISOLATED;
             s.currentIntervalMs = 30000;                          // ← DoD 30s
             s.lastProbeTimeMs = nowMs();
@@ -189,17 +189,6 @@ int64_t PollScheduler::getNextPollDelayMs(uint8_t slaveId) const noexcept {
 bool PollScheduler::isLinkBusy(uint8_t linkId) const noexcept {
     auto it = m_links.find(linkId);
     return (it != m_links.end()) && it->second.busy;
-}
-
-void PollScheduler::recomputeCurrentInterval(SlavePollState& s) noexcept {
-    // 健康时按原始周期；DEGRADED 时 ×3；ISOLATED 时 30s（由 onResponseReceived 控制）
-    if (s.health == SlaveHealth::HEALTHY) {
-        s.currentIntervalMs = s.originalIntervalMs;
-    } else if (s.health == SlaveHealth::DEGRADED) {
-        s.currentIntervalMs = s.originalIntervalMs * 3;
-    } else {
-        s.currentIntervalMs = 30000;
-    }
 }
 
 }  // namespace ens::protocol

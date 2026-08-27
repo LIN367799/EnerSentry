@@ -47,10 +47,13 @@ struct DispatchResult {
 // dispatchFull —— 完整 FC01/02/03/04/05/06/15/16 dispatch
 //   slaveRuntime: 从站路由元数据 + regs
 //   pdu: FC + 数据(不含 unitId / CRC / MBAP 头)
+//   writable: 写路径(FC05/06/0F/10)是否允许改 regs。读路径传 false(仅 const 访问),
+//             写路径传 true(regs 必须指向 CoW 副本,调用方负责 publish)。
 //   return: PDU 响应 + 异常码
 // ─────────────────────────────────────────────────────────────────────────────
 DispatchResult dispatchFull(const SlaveRuntime& slaveRuntime,
-                            const uint8_t* pdu, size_t n) noexcept;
+                            const uint8_t* pdu, size_t n,
+                            bool writable) noexcept;
 
 // 便利函数:已知从站 ID + RegisterBank 引用 + transport,自动取 SlaveRegset.
 // 返回 std::nullopt 表示该 slave 未注册或 regs 为空。

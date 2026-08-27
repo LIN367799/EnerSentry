@@ -54,6 +54,13 @@ PointGenerator::PointGenerator(SimConfig cfg,
         m_work[id] = SlaveRegset::allocate(id, cap, cap);
         m_work[id].slaveId = id;
     }
+    // PCS 参考从站(供 Meter 引用有功):取首个 kind==Pcs,无则保持 0 → evolveMeter 取 0
+    for (uint8_t id : m_slaves) {
+        if (inferKindFromName(m_pt->onSlave(id)) == DeviceKind::Pcs) {
+            m_pcsRefSlave = id;
+            break;
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,13 +113,10 @@ void PointGenerator::generateTick() {
             // SIM-IMP §6.2:生成线程异常时该从站值保持上一帧
         }
 
-        // CoW publish 到 RCU（Phase 1 暂未连 SimulatorEngine,debug 时把 work 同步到 m_work）
+        // CoW publish 到 RCU;m_bank==nullptr(纯单测)时 work 即最终结果
         auto snap = std::make_shared<SlaveRegset>(m_work[slave]);
         if (m_bank != nullptr) {
             m_bank->publish(slave, snap);
-        } else {
-            // 单测场景:work 自己备份一份（避免上面快照副本被释放后 m_work 仍引用相同内容）
-            m_work[slave] = *snap;
         }
     }
 }
@@ -184,9 +188,9 @@ void PointGenerator::evolvePcs(uint8_t slave, double dtS) noexcept {
 void PointGenerator::evolveMeter(uint8_t slave, double dtS) noexcept {
     (void)dtS;
     SlaveRegset& work = m_work[slave];
-    // Meter 把 PCS-01 有功当参考;所有寄存器类型都写非零 baseline
+    // Meter 把首个 PCS 的有功当参考;无 PCS 时取 0。所有寄存器类型都写非零 baseline
     // (DoD ① "均非全 0" 约束:即便 InputRegister 也给个 baseline 占位)
-    const double refKw = m_state[17].pcs_active_kw;
+    const double refKw = (m_pcsRefSlave != 0) ? m_state[m_pcsRefSlave].pcs_active_kw : 0.0;
     const auto& v = m_pt->onSlave(slave);
     for (const auto& p : v) {
         if (!p.enabled) continue;

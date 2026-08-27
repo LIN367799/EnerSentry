@@ -157,7 +157,7 @@ public:
     int         isolatedCount() const noexcept { return m_isolatedCount.load(); }
 
     // ── 时钟注入（单测用,生产走 steady_clock）──
-    /// 推进虚拟时钟(毫秒)。生产代码应依赖 nowMs() 走 steady_clock。
+    /// 推进虚拟时钟(毫秒);原子自增,可跨线程安全调用。
     void advanceClock(int64_t ms) noexcept { m_clockOffsetMs += ms; }
     int64_t nowMs() const noexcept;
 
@@ -168,9 +168,6 @@ signals:
     void slaveProbing(uint8_t slaveId);
 
 private:
-    // ── 内部 ──
-    void recomputeCurrentInterval(SlavePollState& s) noexcept;
-
     // ── 状态 ──
     std::unordered_map<uint8_t, LinkState>     m_links;     // linkId → state
     std::unordered_map<uint8_t, SlavePollState> m_slaveStates;  // slaveId → state
@@ -178,7 +175,7 @@ private:
     std::atomic<int> m_successCount{0};
     std::atomic<int> m_degradedCount{0};
     std::atomic<int> m_isolatedCount{0};
-    int64_t          m_clockOffsetMs = 0;        // 测试用偏移;真实 nowMs() 走 steady_clock
+    std::atomic<int64_t> m_clockOffsetMs{0};    // 测试用时钟偏移(advanceClock 可跨线程安全推进)
 };
 
 }  // namespace ens::protocol

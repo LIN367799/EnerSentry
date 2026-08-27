@@ -6,6 +6,7 @@
 //   * BMS 100ms 插队 / SBO 风暴防护
 //   * HEALTHY -> DEGRADED (3 failures) -> ISOLATED (8 failures) -> PROBING (30s later)
 //   * 任意成功响应立即恢复 HEALTHY
+//   * PROBING 失败回 ISOLATED 不重复发 slaveIsolated(P2-8)
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -19,8 +20,7 @@
 using namespace ens::protocol;
 using Catch::Approx;
 
-// 简化的时间注入 - 让测试可控推进 nowMs
-// PollScheduler 内部 nowMs() 用 static internal_clock;测试覆盖前先 reset
+// 时间推进用 ps.advanceClock() 显式驱动(生产 nowMs() 走 steady_clock)
 
 TEST_CASE("poll_scheduler: enqueue/dequeue by priority + half-duplex FIFO serial",
           "[master][protocol][poll_scheduler][priority]") {
@@ -210,6 +210,31 @@ TEST_CASE("poll_scheduler: signal emission count - slaveDegraded / slaveIsolated
     // 恢复
     ps.onResponseReceived(sid, true);
     REQUIRE(recoveredCount == 1);
+}
+
+TEST_CASE("poll_scheduler: probing failure back to ISOLATED - no duplicate slaveIsolated",
+          "[master][protocol][poll_scheduler][probing][dedup]") {
+    PollScheduler ps;
+    const uint8_t sid = 1;
+    int isolatedCount = 0;
+    QObject::connect(&ps, &PollScheduler::slaveIsolated,
+                     [&](uint8_t, int) { ++isolatedCount; });
+
+    ps.registerSlave(sid, /*linkId=*/1, 1000);
+    for (int i = 0; i < 8; ++i) ps.onResponseReceived(sid, false);
+    REQUIRE(ps.healthOf(sid) == SlaveHealth::ISOLATED);
+    REQUIRE(isolatedCount == 1);
+
+    // 30s 后进入 PROBING
+    ps.advanceClock(30000);
+    ps.enterProbingIfDue(sid);
+    REQUIRE(ps.healthOf(sid) == SlaveHealth::PROBING);
+
+    // PROBING 试探失败 → 回 ISOLATED,但不再重复 emit slaveIsolated / 计数
+    ps.onResponseReceived(sid, false);
+    REQUIRE(ps.healthOf(sid) == SlaveHealth::ISOLATED);
+    REQUIRE(isolatedCount == 1);
+    REQUIRE(ps.isolatedCount() == 1);
 }
 
 TEST_CASE("poll_scheduler: timeoutCount cumulative",

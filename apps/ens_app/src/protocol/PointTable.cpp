@@ -22,10 +22,7 @@
 #include <stdexcept>
 
 #if defined(_WIN32)
-    #include <fcntl.h>
-    #include <io.h>
-    #include <stdio.h>
-    #include <wchar.h>
+    #include <stdio.h>   // _wfopen
 #endif
 
 namespace ens::protocol {
@@ -82,14 +79,14 @@ std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::string& path
 }
 
 std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::filesystem::path& path) {
-    // path.wstring() / path.string() / path.c_str() 在 MSVC 控制台 OEM 代码页下若路径含中文,
-    // 会因 ANSI code page 不匹配抛 system_error。本函数不再调用任何窄/宽转换,
-    // 直接走 path.c_str() (UTF-16 native) 给 _wfopen。
+    // Windows 中文路径:path.string()/wstring() 经 ANSI code page 转换会抛 system_error,
+    // 直接走 path.c_str()(UTF-16 native) 给 _wfopen,完全绕开窄/宽转换。
     std::string content;
+    const std::string display = path.generic_u8string();
 #if defined(_WIN32)
     FILE* fp = ::_wfopen(path.c_str(), L"rb");
     if (!fp) {
-        throw std::runtime_error("PointTable: cannot open file");
+        throw std::runtime_error("PointTable: cannot open file '" + display + "'");
     }
     char buf[4096];
     size_t n;
@@ -100,7 +97,7 @@ std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::filesystem::
 #else
     std::ifstream is(path);
     if (!is.is_open()) {
-        throw std::runtime_error("PointTable: cannot open file");
+        throw std::runtime_error("PointTable: cannot open file '" + display + "'");
     }
     std::ostringstream oss;
     oss << is.rdbuf();
@@ -112,7 +109,8 @@ std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::filesystem::
         auto j = nlohmann::json::parse(content.begin(), content.end());
         root = std::move(j);
     } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("PointTable: JSON parse error: ") + e.what());
+        throw std::runtime_error(std::string("PointTable: JSON parse error in '") +
+                                 display + "': " + e.what());
     }
     auto tbl = std::make_shared<PointTable>();
     if (!root.contains("meta") || !root["meta"].contains("schemaVersion")) {
@@ -129,8 +127,8 @@ std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::filesystem::
     for (const auto& pj : root["points"]) {
         PointRuntime pr;
         pr.pointId        = pj.at("pointId").get<uint32_t>();
-        pr.linkId         = pj.value("linkId", pr.pointId);
         pr.slaveAddress   = pj.at("slaveAddress").get<uint8_t>();
+        pr.linkId         = pj.value("linkId", static_cast<uint32_t>(pr.slaveAddress));
         pr.regType        = parseRegType(pj.at("regType").get<std::string>());
         pr.dataType       = parseDataType(pj.at("dataType").get<std::string>());
         pr.byteOrder      = parseByteOrder(pj.at("byteOrder").get<std::string>());
@@ -142,9 +140,8 @@ std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::filesystem::
         pr.enabled        = pj.value("enabled", true);
         pr.pointName      = pj.value("pointName", std::string{});
         pr.unit           = pj.value("unit", std::string{});
-        // 索引填充
-        const auto pidIt = tbl->m_byPointId.find(pr.pointId);
-        if (pidIt != tbl->m_byPointId.end()) {
+        // 索引填充(重复检测)
+        if (tbl->m_byPointId.find(pr.pointId) != tbl->m_byPointId.end()) {
             throw std::runtime_error("PointTable: duplicate pointId=" +
                                      std::to_string(pr.pointId));
         }
@@ -157,35 +154,42 @@ std::shared_ptr<PointTable> PointTable::loadFromJsonFile(const std::filesystem::
         }
         tbl->m_byPointId.emplace(pr.pointId, pr);
         tbl->m_byAddr.emplace(key, pr.pointId);
+        tbl->m_bySlave[pr.slaveAddress].push_back(pr.pointId);
+    }
+    // m_bySlave 内按 registerAddr 升序(供 allOnSlave 直接返回)
+    for (auto& [slave, ids] : tbl->m_bySlave) {
+        (void)slave;
+        std::sort(ids.begin(), ids.end(), [&tbl](uint32_t a, uint32_t b) {
+            return tbl->m_byPointId.at(a).registerAddr <
+                   tbl->m_byPointId.at(b).registerAddr;
+        });
     }
     return tbl;
 }
 
 // ── 查询 ──────────────────────────────────────────────────────────────────
 
-std::optional<PointRuntime> PointTable::resolve(uint8_t slaveAddress, uint16_t registerAddr) const noexcept {
+const PointRuntime* PointTable::resolve(uint8_t slaveAddress, uint16_t registerAddr) const noexcept {
     const auto it = m_byAddr.find(kAddrKey(slaveAddress, registerAddr));
-    if (it == m_byAddr.end()) return std::nullopt;
+    if (it == m_byAddr.end()) return nullptr;
     const auto pit = m_byPointId.find(it->second);
-    if (pit == m_byPointId.end()) return std::nullopt;
-    return pit->second;
+    return (pit != m_byPointId.end()) ? &pit->second : nullptr;
 }
 
-std::optional<PointRuntime> PointTable::pointIdOf(uint32_t pointId) const noexcept {
+const PointRuntime* PointTable::pointIdOf(uint32_t pointId) const noexcept {
     const auto it = m_byPointId.find(pointId);
-    if (it == m_byPointId.end()) return std::nullopt;
-    return it->second;
+    return (it != m_byPointId.end()) ? &it->second : nullptr;
 }
 
-std::vector<PointRuntime> PointTable::allOnSlave(uint8_t slaveAddress) const noexcept {
-    std::vector<PointRuntime> out;
-    for (const auto& [pid, pr] : m_byPointId) {
-        if (pr.slaveAddress == slaveAddress) out.push_back(pr);
+std::vector<const PointRuntime*> PointTable::allOnSlave(uint8_t slaveAddress) const noexcept {
+    std::vector<const PointRuntime*> out;
+    const auto it = m_bySlave.find(slaveAddress);
+    if (it == m_bySlave.end()) return out;
+    out.reserve(it->second.size());
+    for (uint32_t pid : it->second) {
+        const auto pit = m_byPointId.find(pid);
+        if (pit != m_byPointId.end()) out.push_back(&pit->second);
     }
-    std::sort(out.begin(), out.end(),
-              [](const PointRuntime& a, const PointRuntime& b) {
-                  return a.registerAddr < b.registerAddr;
-              });
     return out;
 }
 
@@ -224,9 +228,10 @@ size_t PointTable::reassembleBytes(const uint16_t* regs, size_t regCount,
             break;
 
         case ByteOrder::CDAB:
-            // [A,B,C,D] → [C,D,A,B]:把前后两半 16-bit word 互换
-            //   regCount==2: out[0]=buf[2],out[1]=buf[3],out[2]=buf[0],out[3]=buf[1]
-            //   regCount==4: 同样按 16-bit word 两两互换（half dword swap）
+            // [A,B,C,D] → [C,D,A,B]:dword 内 16-bit word 序反转。
+            //   regCount==2 → 直接前后两 word 互换;
+            //   regCount==4 → 按 32-bit dword 粒度两两互换(即 [A..H]→[E,F,G,H,A,B,C,D],
+            //                 64-bit 值的 word 级整体反转为 DCBA,CDAB 保持 dword 内 word 交换语义)。
             for (size_t i = 0; i < regCount / 2; ++i) {
                 const size_t src = 2 * i;
                 const size_t dst = 2 * (i + regCount / 2);

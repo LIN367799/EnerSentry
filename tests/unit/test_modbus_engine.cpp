@@ -279,6 +279,52 @@ TEST_CASE("modbus_engine: writeRequest rejects invalid coil value (FC05)",
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ③ TCP 路径:TxId 分配/回收
+// ─────────────────────────────────────────────────────────────────────────────
+TEST_CASE("modbus_engine: TCP TxId allocate/write/release round-trip (no leak, id reuse)",
+    "[master][engine][tcp][txid][alloc]") {
+    auto* channel = new MockIChannel;
+    ModbusEngine engine(channel, Transport::Tcp);
+    engine.bindToChannel();
+
+    ModbusRequest req;
+    req.transport      = Transport::Tcp;
+    req.slaveAddress   = 1;
+    req.functionCode   = 0x03;
+    req.startingAddress = 0;
+    req.quantity       = 1;
+
+    // 第一次写:MBAP tid 应从 1 开始分配
+    REQUIRE(engine.writeRequest(req, /*linkId=*/0) > 0);
+    const auto f1 = channel->lastWrittenBytes();
+    REQUIRE(f1.size() == 12);   // TCP FC03 = 7 MBAP + 5 PDU
+    const uint16_t tid1 = static_cast<uint16_t>(
+        (static_cast<uint8_t>(f1[0]) << 8) | static_cast<uint8_t>(f1[1]));
+    REQUIRE(tid1 == 1u);
+
+    // 第二次写:分配 2,不重复
+    REQUIRE(engine.writeRequest(req, 0) > 0);
+    const auto f2 = channel->lastWrittenBytes();
+    const uint16_t tid2 = static_cast<uint16_t>(
+        (static_cast<uint8_t>(f2[0]) << 8) | static_cast<uint8_t>(f2[1]));
+    REQUIRE(tid2 == 2u);
+
+    // 响应 tid2 → onBytesReceived release → 下次分配复用 2
+    const std::vector<uint8_t> resp = {
+        static_cast<uint8_t>(tid2 >> 8), static_cast<uint8_t>(tid2 & 0xFF),
+        0x00, 0x00, 0x00, 0x05,        // pid=0, length=5(unitId+FC+byteCount+2B data)
+        0x01, 0x03, 0x02, 0x12, 0x34
+    };
+    channel->feedBytes(resp);
+
+    REQUIRE(engine.writeRequest(req, 0) > 0);
+    const auto f3 = channel->lastWrittenBytes();
+    const uint16_t tid3 = static_cast<uint16_t>(
+        (static_cast<uint8_t>(f3[0]) << 8) | static_cast<uint8_t>(f3[1]));
+    REQUIRE(tid3 == 2u);   // 复用已释放的 tid2(1 仍占用)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ③ TCP MBAP 路径
 // ─────────────────────────────────────────────────────────────────────────────
 TEST_CASE("modbus_engine: TCP MBAP response parsed via parseTcpResponse",

@@ -7,8 +7,8 @@
 //   * onBytesReceived 槽接 IChannel::dataReceived(QByteArray) — ModbusEngine 通常
 //     moveToThread 到 worker 线程,Qt::AutoConnection 自动选 QueuedConnection 跨线程派发,
 //     slot 在 worker 线程 context 内执行(无锁)。
-//   * writeRequest 组帧后 IChannel::write;TCP 模式下额外分配 TransactionId 并维护
-//     inFlight 映射(响应回来时按 tid 路由回原始 linkId)。
+//   * writeRequest 组帧后 IChannel::write;TCP 模式下分配 TransactionId 写入 MBAP,
+//     响应解析成功后按 tid 释放回收(位图不泄漏)。inFlight 配对路由属 Phase 4。
 //   * 解析成功 → emit responseParsed(linkId, slave, ModbusResponse);
 //     解析失败 → emit frameError(linkId, slave, kind) — PollScheduler/监控层订阅。
 //
@@ -76,7 +76,7 @@ public:
     ModbusEngine& operator=(ModbusEngine&&) = delete;
 
     /// 绑定 IChannel::dataReceived → onBytesReceived(slot)。
-    /// 通常在 Engine 构造后立即调用一次;重复调用不会重复 connect(Qt::UniqueConnection)。
+    /// 调用方保证只调一次;重复 connect 会产生重复投递。
     void bindToChannel();
 
     /// 下发 Modbus 请求(组帧 + IChannel::write)。
@@ -95,7 +95,7 @@ signals:
     void responseParsed(uint32_t linkId, uint8_t slaveAddress,
                         const ModbusResponse& resp);
 
-    /// 帧错误时发出(CRC 错 / 长度不符 / 异常帧 / 未知 FC 等)
+    /// 帧错误时发出(长度不符 / 畸形 / 异常帧 / 未知 FC 等;CRC 错由累加器内吞,不 emit)
     void frameError(uint32_t linkId, uint8_t slaveAddress,
                     FrameErrorKind kind);
 

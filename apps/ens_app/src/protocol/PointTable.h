@@ -55,8 +55,8 @@ enum class DataType : uint8_t {
 /// 字节序（与 LLD §4.4.1 一致,大端字序 ABCD 为 Modbus 默认）。
 enum class ByteOrder : uint8_t {
     ABCD = 0,   // 大端字序 / 大端字节（Modbus 默认）
-    BADC = 1,   // 字交换
-    CDAB = 2,   // 字节交换（大小端反）
+    BADC = 1,   // 每个 16-bit word 内字节交换
+    CDAB = 2,   // dword 内 16-bit word 序反转（32-bit 字序小端化）
     DCBA = 3,   // 完全反转
 };
 
@@ -79,34 +79,33 @@ struct PointRuntime {
     std::string unit;
 };
 
-/// PointTable 契约查询的"找不到"语义：所有查询类返回 std::optional,调用方按 nullopt 处理。
-/// 加载失败抛 std::runtime_error（构造期硬错误,运行期零异常）。
+/// PointTable 契约查询的"找不到"语义：resolve/pointIdOf 返回 nullptr（零拷贝,无 string 拷贝）；
+/// allOnSlave 返回空 vector。加载失败抛 std::runtime_error（构造期硬错误,运行期零异常）。
 class PointTable {
 public:
     PointTable() = default;
 
     /// 从 JSON 文件加载；schemaVersion 校验在内部完成,失败抛 std::runtime_error。
     /// 推荐用 std::filesystem::path 重载（保留原始 Unicode 路径,不强制 ANSI 转换）。
-    /// 字符串重载仍可用,但 Windows 中文路径在控制台 OEM 代码页下 std::filesystem::path::string() 会抛
-    /// "No mapping for the Unicode character..." 异常,推荐 path 重载规避。
+    /// 字符串重载仅限 ASCII 路径(Windows 中文路径会抛 system_error)。
     static std::shared_ptr<PointTable> loadFromJsonFile(const std::string& path);
     static std::shared_ptr<PointTable> loadFromJsonFile(const std::filesystem::path& path);
 
-    /// 主查询：(slaveAddress, registerAddr) → PointRuntime。
-    /// 不存在的组合返回 std::nullopt。
-    std::optional<PointRuntime> resolve(uint8_t slaveAddress, uint16_t registerAddr) const noexcept;
+    /// 主查询：(slaveAddress, registerAddr) → 指向内部存储的只读 PointRuntime。
+    /// 不存在返回 nullptr。指针在 PointTable 生命周期内稳定(表不可变)。
+    const PointRuntime* resolve(uint8_t slaveAddress, uint16_t registerAddr) const noexcept;
 
-    /// 反向查询：pointId → PointRuntime。
-    /// 不存在返回 std::nullopt。
-    std::optional<PointRuntime> pointIdOf(uint32_t pointId) const noexcept;
+    /// 反向查询：pointId → 指向内部存储的只读 PointRuntime。
+    /// 不存在返回 nullptr。
+    const PointRuntime* pointIdOf(uint32_t pointId) const noexcept;
 
-    /// 列出某从站的所有 PointRuntime（按 registerAddr 升序）。
+    /// 列出某从站的所有 PointRuntime（按 registerAddr 升序;加载期索引,零扫描）。
     /// 用于 PollScheduler 批量组帧：一次 Modbus 读多寄存器。
-    std::vector<PointRuntime> allOnSlave(uint8_t slaveAddress) const noexcept;
+    std::vector<const PointRuntime*> allOnSlave(uint8_t slaveAddress) const noexcept;
 
     /// 数据类型对应的寄存器寄存器数（1 register = 2 bytes）。
     /// 用于 ModbusEngine 计算一次 FC03/FC04 读取应发的 quantity。
-    ///   Bool    = 1（coil/discrete 按位打包,Register count 取 ceil(qty/16)）
+    ///   Bool    = 1（coil/discrete 按位打包,FC01/02 的 quantity 语义由调用方换算）
     ///   Int16   = 1
     ///   Uint16  = 1
     ///   Int32   = 2
@@ -132,6 +131,7 @@ public:
 private:
     std::unordered_map<uint32_t, PointRuntime> m_byPointId;     // pointId → runtime
     std::unordered_map<uint64_t, uint32_t>      m_byAddr;       // key=(slave<<32)|addr → pointId
+    std::unordered_map<uint8_t, std::vector<uint32_t>> m_bySlave;  // slave → pointId(按 registerAddr 升序)
     static constexpr uint64_t kAddrKey(uint8_t slave, uint16_t addr) noexcept {
         return (static_cast<uint64_t>(slave) << 32) | static_cast<uint64_t>(addr);
     }

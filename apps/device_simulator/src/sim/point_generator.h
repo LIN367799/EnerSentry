@@ -134,6 +134,7 @@ private:
     std::unordered_map<uint8_t, SlaveRuntimeState> m_state;
     std::unordered_map<uint8_t, SlaveRegset>      m_work;     // 本 tick 工作副本
     std::vector<uint8_t>                           m_slaves;
+    uint8_t     m_pcsRefSlave = 0;   // 首个 kind==Pcs 的 slave(Meter 有功参考源),0=无 PCS
     RegisterBank*                                  m_bank = nullptr;   // 非拥有,SimulatorEngine 持有
 };
 
