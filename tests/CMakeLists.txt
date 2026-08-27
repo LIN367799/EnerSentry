@@ -22,6 +22,7 @@ add_executable(ens_tests
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
+    integration/test_modbus_slave_emulator.cpp
     integration/test_tcp_channel.cpp
     integration/test_p1_closeout.cpp
     integration/test_serial_channel.cpp
@@ -31,6 +32,8 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/register_bank.cpp
     ../apps/device_simulator/src/sim/sim_config.cpp
     ../apps/device_simulator/src/sim/point_generator.cpp
+    ../apps/device_simulator/src/sim/modbus_dispatch.cpp
+    ../apps/device_simulator/src/sim/modbus_slave_emulator.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp
     ../apps/device_simulator/src/sim/modbus_tcp_server.cpp
     ../apps/device_simulator/src/sim/rtu_slave_port.h

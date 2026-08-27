@@ -66,6 +66,17 @@ void RtuSlavePort::setRequestHandler(RequestHandler cb) {
     m_handler = std::move(cb);
 }
 
+void RtuSlavePort::setRequestHandler(RequestHandlerWithUnit cb) noexcept {
+    m_handlerWithUnit = std::move(cb);
+}
+
+std::vector<uint8_t> RtuSlavePort::invokeHandler(uint8_t unitId,
+                                                 const std::vector<uint8_t>& reqPdu) {
+    if (m_handlerWithUnit) return m_handlerWithUnit(unitId, reqPdu);
+    if (m_handler)         return m_handler(reqPdu);
+    return dispatchRequest(m_regs, reqPdu.data(), reqPdu.size());
+}
+
 void RtuSlavePort::onReadyRead() {
     if (!m_port) return;
     m_rxBuf.append(m_port->readAll());
@@ -93,12 +104,9 @@ void RtuSlavePort::processFrame(const QByteArray& frame) noexcept {
     const uint8_t* pdu = p + 1;
     const size_t pduLen = n - 1 - 2;
 
-    std::vector<uint8_t> respPdu;
-    if (m_handler) {
-        respPdu = m_handler(std::vector<uint8_t>(pdu, pdu + pduLen));
-    } else {
-        respPdu = dispatchRequest(m_regs, pdu, pduLen);
-    }
+    const uint8_t unitId = p[0];
+    std::vector<uint8_t> respPdu = invokeHandler(unitId,
+        std::vector<uint8_t>(pdu, pdu + pduLen));
     if (respPdu.empty() || !m_port) return;
 
     // 响应帧 = addr + respPdu + crc（低字节在前）

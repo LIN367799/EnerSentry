@@ -153,6 +153,25 @@ void ModbusTcpServer::setRequestHandler(RequestHandler cb) {
     m_handler = std::move(cb);
 }
 
+void ModbusTcpServer::setRequestHandler(RequestHandlerWithUnit cb) noexcept {
+    std::lock_guard<std::mutex> lock(m_handlerMtx);
+    m_handlerWithUnit = std::move(cb);
+}
+
+std::vector<uint8_t> ModbusTcpServer::invokeHandler(uint8_t unitId,
+                                                   const std::vector<uint8_t>& reqPdu) {
+    RequestHandlerWithUnit hwu;
+    RequestHandler h;
+    {
+        std::lock_guard<std::mutex> lock(m_handlerMtx);
+        hwu = m_handlerWithUnit;
+        h   = m_handler;
+    }
+    if (hwu) return hwu(unitId, reqPdu);
+    if (h)   return h(reqPdu);
+    return dispatchRequest(m_regs, reqPdu.data(), reqPdu.size());
+}
+
 void ModbusTcpServer::boostThreadPriority() noexcept {
 #ifdef _WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);   // 失败忽略
@@ -202,17 +221,9 @@ void ModbusTcpServer::clientLoop(int clientFd) noexcept {
         if (!recvAll(clientFd, pdu.data(), pduLen)) break;
 
         // handler 拷贝到局部再调用（持锁调用可能在 handler 内重入 server 造成死锁）
-        RequestHandler handler;
-        {
-            std::lock_guard<std::mutex> lock(m_handlerMtx);
-            handler = m_handler;
-        }
         std::vector<uint8_t> respPdu;
-        if (handler) {
-            respPdu = handler(std::vector<uint8_t>(pdu.data(), pdu.data() + pduLen));
-        } else {
-            respPdu = dispatchRequest(m_regs, pdu.data(), pduLen);
-        }
+        respPdu = invokeHandler(hdr.unitId,
+                                std::vector<uint8_t>(pdu.data(), pdu.data() + pduLen));
         if (respPdu.empty()) break;                 // 非法请求 → 丢弃连接
 
         core::MbapHeader resp;

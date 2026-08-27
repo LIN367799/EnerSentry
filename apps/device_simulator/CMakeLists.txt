@@ -9,6 +9,8 @@ add_executable(DeviceSimulator
     src/sim/register_bank.cpp
     src/sim/sim_config.cpp
     src/sim/point_generator.cpp
+    src/sim/modbus_dispatch.cpp
+    src/sim/modbus_slave_emulator.cpp
     src/sim/modbus_slave.cpp
     src/sim/modbus_tcp_server.cpp
     src/sim/rtu_slave_port.h

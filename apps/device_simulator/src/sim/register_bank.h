@@ -139,6 +139,12 @@ public:
     /// 诊断：清空所有从站快照（SimulatorEngine::stop 阶段调用）
     void clear() noexcept;
 
+    // ── B6 新增:从外部 dispatch 写入(FC05/06/0F/10 直接落 SlaveRegset,绕过 PointGenerator)──
+    // CoW:取现有 snapshot → 修改 → publish 替换;
+    // 多线程并发写需调用方自行加锁(本类内部仅 short unique_lock 写)。
+    void writeHolding(uint8_t slave, uint16_t addr, uint16_t v) noexcept;
+    void writeCoil(uint8_t slave, uint16_t addr, bool v) noexcept;
+
     static constexpr uint16_t kControlRegCount = 16;     // 每从站控制字前 16 个寄存器
 
 private:

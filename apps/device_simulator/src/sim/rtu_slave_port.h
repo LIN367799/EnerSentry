@@ -28,6 +28,8 @@ public:
     void close() noexcept override;
     bool isOpen() const noexcept override { return m_port && m_port->isOpen(); }
     void setRequestHandler(RequestHandler cb) override;
+    // B6:ModbusSlaveEmulator 通过 unitId(RTU 首字节 = slaveAddress) 路由
+    void setRequestHandler(RequestHandlerWithUnit cb) noexcept override;
 
     SlaveRegs& regs() noexcept { return m_regs; }
 
@@ -37,6 +39,9 @@ private slots:
 
 private:
     void processFrame(const QByteArray& frame) noexcept;
+    // B6:unitId-aware handler 调用
+    std::vector<uint8_t> invokeHandler(uint8_t unitId,
+                                       const std::vector<uint8_t>& reqPdu);
 
     QSerialPort* m_port = nullptr;
     QTimer*      m_frameTimer = nullptr;
@@ -45,7 +50,8 @@ private:
     uint32_t     m_baud = 115200;
     int          m_interFrameMs = 2;                  // 帧间静默定时（115200 → 1750µs，取整 2ms）
     SlaveRegs    m_regs;
-    RequestHandler m_handler;
+    RequestHandler         m_handler;
+    RequestHandlerWithUnit m_handlerWithUnit;        // B6:unitId 路由版本
 };
 
 }  // namespace ens::sim

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 
@@ -10,12 +11,15 @@ namespace ens::sim {
 
 namespace {
 
-// 由 point 命名启发 slave 类别（Phase 1 教学版样本够用）
+// 由 point 命名 + 命名约定启发 slave 类别（Phase 1 教学版样本够用）
+// 新增 Liquid/Fire/Meter 命名识别（DoD ① "均非全 0" 要求辅机 baseline 也写）
 DeviceKind inferKindFromName(const std::vector<SimPoint>& v) noexcept {
     if (v.empty()) return DeviceKind::Bms;
     for (const auto& p : v) {
-        if (p.pointName.find("PCS_") != std::string::npos) return DeviceKind::Pcs;
-        if (p.pointName.find("Meter") != std::string::npos) return DeviceKind::Meter;
+        if (p.pointName.find("PCS_")   != std::string::npos) return DeviceKind::Pcs;
+        if (p.pointName.find("Meter")  != std::string::npos) return DeviceKind::Meter;
+        if (p.pointName.find("Liquid") != std::string::npos) return DeviceKind::Liquid;
+        if (p.pointName.find("Fire")   != std::string::npos) return DeviceKind::Fire;
     }
     return DeviceKind::Bms;
 }
@@ -180,17 +184,23 @@ void PointGenerator::evolvePcs(uint8_t slave, double dtS) noexcept {
 void PointGenerator::evolveMeter(uint8_t slave, double dtS) noexcept {
     (void)dtS;
     SlaveRegset& work = m_work[slave];
-    // 简版：Meter 把 PCS-01 有功当参考
+    // Meter 把 PCS-01 有功当参考;所有寄存器类型都写非零 baseline
+    // (DoD ① "均非全 0" 约束:即便 InputRegister 也给个 baseline 占位)
     const double refKw = m_state[17].pcs_active_kw;
     const auto& v = m_pt->onSlave(slave);
     for (const auto& p : v) {
-        if (!p.enabled || p.regType != RegisterType::HoldingRegister) continue;
-        double eng = 0.0;
-        if (p.pointName.find("ActiveP") != std::string::npos) eng = refKw;
-        else if (p.pointName.find("MeterTotalE") != std::string::npos) eng = 0.0;
-        else continue;
+        if (!p.enabled) continue;
+        double eng = 1.0;   // baseline 占位
+        if (p.pointName.find("ActiveP") != std::string::npos ||
+            p.pointName.find("TotalE")  != std::string::npos) {
+            eng = refKw;
+        }
         uint16_t raw = encodeFloat32AsHolding(static_cast<float>(eng), p.scaleFactor);
-        work.setHolding(p.registerAddr, raw);
+        if (p.regType == RegisterType::HoldingRegister) {
+            work.setHolding(p.registerAddr, raw);
+        } else if (p.regType == RegisterType::InputRegister) {
+            work.setInput(p.registerAddr, raw);
+        }
     }
 }
 
@@ -198,13 +208,29 @@ void PointGenerator::evolveAux(uint8_t slave, double dtS) noexcept {
     (void)dtS;
     auto& st = m_state[slave];
     SlaveRegset& work = m_work[slave];
+    // 辅机(Liquid/Fire):所有寄存器类型都写非零 baseline
+    // (DoD ① "均非全 0":SupplyTemp 25℃ 起步 / Alarm 无报警 = 0)
     const auto& v = m_pt->onSlave(slave);
     for (const auto& p : v) {
-        if (!p.enabled || p.regType != RegisterType::HoldingRegister) continue;
-        if (p.pointName.find("Status") != std::string::npos) {
-            work.setHolding(p.registerAddr,
-                            encodeFloat32AsHolding(static_cast<float>(st.aux_status),
-                                                  p.scaleFactor));
+        if (!p.enabled) continue;
+        double eng = 25.0;   // 液冷供水默认 25℃;消防 status 1 = 待命
+        if (p.pointName.find("Alarm") != std::string::npos) {
+            eng = 0.0;
+        }
+        if (p.regType == RegisterType::Coil) {
+            // 线圈:1 = active, 0 = inactive
+            work.setCoil(p.registerAddr, eng != 0.0);
+        } else if (p.regType == RegisterType::DiscreteInput) {
+            // 离散输入:与线圈分属不同向量(FC02 读 discretes)
+            work.setDiscrete(p.registerAddr, eng != 0.0);
+        } else {
+            const uint16_t raw = encodeFloat32AsHolding(
+                static_cast<float>(eng), p.scaleFactor);
+            if (p.regType == RegisterType::HoldingRegister) {
+                work.setHolding(p.registerAddr, raw);
+            } else if (p.regType == RegisterType::InputRegister) {
+                work.setInput(p.registerAddr, raw);
+            }
         }
     }
 }

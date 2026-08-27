@@ -63,4 +63,23 @@ void RegisterBank::clear() noexcept {
     m_banks.clear();
 }
 
+void RegisterBank::writeHolding(uint8_t slave, uint16_t addr, uint16_t v) noexcept {
+    std::unique_lock<std::shared_mutex> lock(m_rw);
+    const auto it = m_banks.find(slave);
+    if (it == m_banks.end() || it->second == nullptr) return;
+    // CoW：拷贝出非 const SlaveRegset 副本 → setHolding → publish 替换
+    auto copy = std::make_shared<SlaveRegset>(*it->second);
+    copy->setHolding(addr, v);
+    m_banks[slave] = std::move(copy);
+}
+
+void RegisterBank::writeCoil(uint8_t slave, uint16_t addr, bool v) noexcept {
+    std::unique_lock<std::shared_mutex> lock(m_rw);
+    const auto it = m_banks.find(slave);
+    if (it == m_banks.end() || it->second == nullptr) return;
+    auto copy = std::make_shared<SlaveRegset>(*it->second);
+    copy->setCoil(addr, v);
+    m_banks[slave] = std::move(copy);
+}
+
 }  // namespace ens::sim

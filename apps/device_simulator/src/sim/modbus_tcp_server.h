@@ -29,6 +29,8 @@ public:
     void close() noexcept override;
     bool isOpen() const noexcept override { return m_listenFd >= 0; }
     void setRequestHandler(RequestHandler cb) override;
+    // B6:ModbusSlaveEmulator 通过 unitId(MBAP) 路由到不同 SlaveRegset
+    void setRequestHandler(RequestHandlerWithUnit cb) noexcept override;
 
     // 实际监听端口（open 成功后；bind 0 时由 OS 分配，测试用）
     uint16_t actualPort() const noexcept { return m_port; }
@@ -39,6 +41,9 @@ private:
     void clientLoop(int clientFd) noexcept;           // 每连接一个 IO 线程
     void dropAllClients() noexcept;                   // close() 时断开全部已接受连接
     static void boostThreadPriority() noexcept;       // HIGHEST 尽力而为
+    // B6:获取 handler(优先 unit-aware 版,fallback 经典版),返回 PDU 响应字节
+    std::vector<uint8_t> invokeHandler(uint8_t unitId,
+                                        const std::vector<uint8_t>& reqPdu);
 
     std::string m_ip;
     uint16_t    m_port = 0;
@@ -49,7 +54,8 @@ private:
     std::mutex       m_clientsMtx;
     std::mutex       m_handlerMtx;                    // 保护 m_handler（跨线程读写）
     SlaveRegs   m_regs;
-    RequestHandler m_handler;
+    RequestHandler         m_handler;
+    RequestHandlerWithUnit m_handlerWithUnit;        // B6:unitId 路由版本(若设置则优先)
 };
 
 }  // namespace ens::sim
