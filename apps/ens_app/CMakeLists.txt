@@ -64,11 +64,16 @@ target_link_libraries(ens_protocol PUBLIC ens::channel ens::3rdparty)
 # Phase 3 4.1.1: RingBuffer<T> SPSC + 多消费者 Cursor（无锁环形缓冲）。
 # Phase 3 4.1.2: L1SnapshotStore（稠密/稀疏索引路由测点到 RingBuffer）。
 # Phase 3 4.1.3: DataBus（观察者模式广播，订阅表 QReadWriteLock 保护）。
+# Phase 3 4.1.4: DownSampler 降采样聚合（Min/Max/Avg/Count/First/Last）。
+# Phase 3 4.1.5: SQLiteDataAccess + L2HistoryStore（双缓冲 Swap + 按月分库批量 INSERT）。
 # Sample.h 16B 对齐契约由 datahub_anchor 编译期 static_assert 闸口(LLD-200 §3.1)。
 add_library(ens_datahub STATIC
     src/datahub/datahub_anchor.cpp
     src/datahub/L1SnapshotStore.cpp
-    src/datahub/DataBus.cpp)
+    src/datahub/DataBus.cpp
+    src/datahub/DownSampler.cpp
+    src/datahub/SQLiteDataAccess.cpp
+    src/datahub/L2HistoryStore.cpp)
 add_library(ens::datahub ALIAS ens_datahub)
 target_include_directories(ens_datahub PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/datahub)

@@ -22,6 +22,9 @@ add_executable(ens_tests
     unit/test_ringbuffer.cpp
     unit/test_l1snapshot.cpp
     unit/test_databus.cpp
+    unit/test_down_sampler.cpp
+    unit/test_sqlite_data_access.cpp
+    unit/test_l2history_store.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -48,9 +51,19 @@ target_include_directories(ens_tests PRIVATE
     ../apps/device_simulator/src
     ../apps/ens_app/src)
 target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub Catch2::Catch2)
-# B3 起原生 socket（winsock2）：MSVC 下需显式链 ws2_32（Qt5::Network 也带，双保险）
+# B3 起原生 socket（winsock2）：用 find_library 给完整路径 + 显式 LIBPATH(避免依赖
+#  PowerShell Enter-VsDevShell 的 LIB env 在 ninja→cmd spawn 链中丢失)
 if(WIN32)
-    target_link_libraries(ens_tests PRIVATE ws2_32)
+    find_library(WS2_32_LIB NAMES ws2_32 PATHS
+        "C:/Program Files (x86)/Windows Kits/10/Lib"
+        "C:/Program Files/Windows Kits/10/Lib"
+        REQUIRED)
+    target_link_libraries(ens_tests PRIVATE "${WS2_32_LIB}")
+    # 显式加 Windows SDK + MSVC lib 路径,供 link 找 kernel32/user32/... 等系统库
+    target_link_options(ens_tests PRIVATE
+        "LINKER:/LIBPATH:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64"
+        "LINKER:/LIBPATH:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64"
+        "LINKER:/LIBPATH:D:/Program Files/VS2022/VC/Tools/MSVC/14.44.35207/lib/x64")
 endif()
 
 # 把 sim_pointtable_sample.json 拷贝到 ens_tests 输出目录的 test_data/ 下。
@@ -65,6 +78,15 @@ endif()
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data)
 file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data)
+
+# Qt SQL driver:Debug 模式需要 qsqlited.dll 在 plugins/sqldrivers/ 子目录
+# (在 CMake configure 时同步复制,避免手工操作;依赖 Qt 5.15 默认布局)
+set(_QT_SQL_PLUGIN_DIR "D:/HJL/qt/5.15.2/msvc2019_64/plugins/sqldrivers")
+if(EXISTS "${_QT_SQL_PLUGIN_DIR}/qsqlited.dll")
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin/Debug/plugins/sqldrivers)
+    file(COPY "${_QT_SQL_PLUGIN_DIR}/qsqlited.dll"
+         DESTINATION ${CMAKE_BINARY_DIR}/bin/Debug/plugins/sqldrivers)
+endif()
 
 include(Catch)
 catch_discover_tests(ens_tests)

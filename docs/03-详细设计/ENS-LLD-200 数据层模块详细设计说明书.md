@@ -1,8 +1,9 @@
 # ENS-LLD-300 《数据中枢与分级存储模块（DataHub Layer - L3）详细设计说明书》
 
-> **文档编号**：ENS-LLD-300 ｜ **版本**：V1.2 ｜ **所属架构层级**：L3（数据中枢层）
+> **文档编号**：ENS-LLD-300 ｜ **版本**：V1.3 ｜ **所属架构层级**：L3（数据中枢层）
 > **修订记录**：V1.1 按评审意见细化了 L1SnapshotStore 热路径数组寻址、RingBuffer 二分范围提取、AttachGuard 条件变量等待。  
 > **修订记录（V1.2）**：Phase 3 切片 7 落地（4.1.1 RingBuffer / 4.1.2 L1SnapshotStore / 4.1.3 DataBus 已实现，ctest 167/167）。① §3.2 RingBuffer 模板参数 `Capacity` 改运行时构造参数（支持 §3.5.2 NFR-PERF-05 每测点分级容量）；`m_publishedPos` 语义定为"已发布数据量 counter"（推 N 次后 = N，可读区间 `[cursor, published)` 半开——修正 V1.1 草案 position 语义下 readRecent/extractRange 公式不自洽）；移除 `std::atomic<T>::is_always_lock_free` 静态断言（MSVC 14.x constexpr 误报，对齐 §3.1 Sample 决策）。② §3.4 L1SnapshotStore 稀疏回退由 QHash 改 `std::unordered_map`（Qt 5 `QHash::insert` 对 move-only value 仍走拷贝路径）。③ §6 DataBus 接口对齐实现：`IDataBusSubscriber` 接口 + 自增 `Subscription` 句柄 + `subscribeWildcard` + broadcast 两步走（详见 §6 V1.2 落地修订）。  
+> **修订记录（V1.3）**：Phase 3 切片 8 落地（4.1.4 DownSampler / 4.1.5 L2HistoryStore + SQLiteDataAccess 已实现）。① §5.1 DownSampler 算法对齐实现：纯算法（无 SQLite 依赖），`feed/rollUp/alignToWindow` + Bucket Min/Max/Avg/Sum/Count/First/Last 聚合 + 多测点独立桶表。② §4.3/§4.5 SQLiteDataAccess 基础版落地：单月 DB 路由（`getDatabasePath`/`getTableName`）、`applyPragmas`（journal_mode=WAL/synchronous=NORMAL/cache_size=-64MB/mmap=256MB/busy_timeout=3s）、`ensureSchema`（WITHOUT ROWID DDL）、`batchInsert`（单事务 prepared stmt + bind）；`L2HistoryStore` 双缓冲 Swap + 背压（默认 100K）+ 同步 `flush()`。③ **V1.3 简化项（V1.4+ 待补）**：跨月 `ATTACH`/`UNION ALL`（§4.4）、`AttachGuard` RAII、`ReadOnlyConnPool`、磁盘 4 级熔断（§4.6）、`IDataAccess` 抽象接口（§4.3）、告警/审计独立月库（§4.3 静态隔离）。L2HistoryStore 粒度硬编码 `Gran1s`（V1.4 改为支持多粒度 store 实例）。  
 > **对应 CMake Target**：`ens::datahub`（STATIC，热路径，参考 HLD §2.6.5 / ADR-12）  
 > **核心负责类**：`RingBuffer<T>`、`L1SnapshotStore`、`BlackBoxManager`、`CriticalSwapFile`、`PlatformMMap`、`L2HistoryStore`、`SQLiteDataAccess`、`DownSampler`、`DataBus`、`AttachGuard`  
 > **关联 ADR**：ADR-08 / ADR-09 / ADR-14 / ADR-15 / ADR-17 / ADR-18 / ADR-19 / ADR-20 / ADR-21（HLD 级）；ADR-LLD-01~ADR-LLD-04（本册新增）  
