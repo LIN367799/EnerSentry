@@ -55,6 +55,9 @@ public:
     /// 诊断:mmap 是否可用
     bool criticalSwapEnabled() const noexcept { return m_swap != nullptr; }
 
+    /// 测试钩子：强制 flushSync(0, totalFileSize) + 显式 close mmap
+    void forceSync();
+
 private:
     L1SnapshotStore*            m_l1Store;     // 非 own
     std::unique_ptr<CriticalSwapFile> m_swap;  // Critical mmap(可选)

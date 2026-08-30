@@ -63,4 +63,11 @@ uint32_t BlackBoxManager::criticalSnapshotCount() const {
     return (m_swap != nullptr) ? m_swap->snapshotCount() : 0;
 }
 
+void BlackBoxManager::forceSync() {
+    if (m_swap != nullptr) {
+        // close() 内部 flushSync(0, totalFileSize) + 释放 mmap 句柄,让 reread 可重新 open
+        m_swap->close();
+    }
+}
+
 }  // namespace ens::datahub

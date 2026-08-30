@@ -27,6 +27,10 @@ add_executable(ens_tests
     unit/test_l2history_store.cpp
     unit/test_platform_mmap.cpp
     unit/test_blackbox.cpp
+    unit/test_business_state_machine.cpp
+    unit/test_alarm_engine.cpp
+    unit/test_sbo_state_machine.cpp
+    unit/test_business_integration.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -52,7 +56,7 @@ target_include_directories(ens_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ../apps/device_simulator/src
     ../apps/ens_app/src)
-target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub Catch2::Catch2)
+target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub ens::business Catch2::Catch2)
 # B3 起原生 socket（winsock2）：用 find_library 给完整路径 + 显式 LIBPATH(避免依赖
 #  PowerShell Enter-VsDevShell 的 LIB env 在 ninja→cmd spawn 链中丢失)
 if(WIN32)
@@ -88,6 +92,21 @@ if(EXISTS "${_QT_SQL_PLUGIN_DIR}/qsqlited.dll")
     file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin/Debug/plugins/sqldrivers)
     file(COPY "${_QT_SQL_PLUGIN_DIR}/qsqlited.dll"
          DESTINATION ${CMAKE_BINARY_DIR}/bin/Debug/plugins/sqldrivers)
+endif()
+
+# 2026-08-30 修复 ens_tests.exe 桌面双击运行报"找不到 Qt5Sqld.dll":
+#   根因:ens_tests 链接 static ens::datahub → 内联 SQLiteDataAccess.cpp → PE
+#   导入表直接含 Qt5Sql,运行时需 Qt5Sqld.dll。ctest 跑测时通过 PATH 找 Qt bin
+#   目录能通,但桌面双击/资源管理器启动无 PATH,缺主 DLL 即报系统错。
+#   ens_windeployqt(ens_tests) 在 POST_BUILD 调 windeployqt,把 Qt5Sqld.dll +
+#   plugins/sqldrivers/qsqlited.dll 自动部署到 $<TARGET_FILE_DIR:ens_tests>
+#   (= ${CMAKE_RUNTIME_OUTPUT_DIRECTORY} = bin/$<CONFIG>/),与 ens_app 同等待遇。
+#   顺带:上方 file(COPY) 路径写的是 ${CMAKE_BINARY_DIR}/bin/Debug/... (即 build/
+#   下),与 CMAKE_RUNTIME_OUTPUT_DIRECTORY (项目根 bin/) 错位,目前靠 ens_windeployqt
+#   (ens_app) 部署到正确位置掩盖,后续切片统一收口(用 CMAKE_RUNTIME_OUTPUT_DIRECTORY
+#   替代 CMAKE_BINARY_DIR/bin/Debug)。
+if(WIN32)
+    ens_windeployqt(ens_tests)
 endif()
 
 include(Catch)

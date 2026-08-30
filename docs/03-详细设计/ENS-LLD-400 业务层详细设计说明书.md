@@ -2,7 +2,7 @@
 
 > **文档编号**：ENS-LLD-400（合并册，覆盖 ENS-LLD-401 告警引擎 / ENS-LLD-402 SBO 控制与设备级锁 / ENS-LLD-403 基于角色的权限控制 RBAC）
 > **层级**：L4 业务逻辑层（`ens::business`）与 L3 数据中枢层（`ens::datahub`）交互
-> **版本**：V1.4
+> **版本**：V1.5
 > **基线依赖**：HLD V1.5、SRS、DBDD、DataHub_LLD（ENS-LLD-300）、线程模型专题报告、总纲 ENS-LLD-000
 > **不可推翻决策**：ADR-08 ~ ADR-23；本册新增细化以 ADR-LLD-01~05 记录，不得与既有 ADR 冲突
 
@@ -13,6 +13,7 @@
 | V1.2 | 2026-08-14 | 业务架构师 | 工程落地细化：① `reloadRules` 旧 `PointAlarmState` 清理/迁移策略；② 告警风暴队列预分配消除 `malloc` jitter；③ `DataBus` 订阅句柄生命周期安全（RAII `SubscriptionGuard` + 显式 `unsubscribe`） |
 | V1.3 | 2026-08-14 | 业务架构师 | 致命 bug 修正与现代化：① `std::deque` 无 `reserve` 改为固定容量 `std::vector` 环形缓冲区；② `reloadRules` 删除规则前强制恢复 Active 告警（`RuleRemoved`）；③ SBO 链路恢复显式 `stop()` `m_flappingTimer`；④ `DataBus::subscribeQueued` 升级为函数指针模板（编译期检查）；⑤ `SboDeviceKey::qHash` 改用 `qHashMulti` |
 | V1.4 | 2026-08-14 | 业务架构师 | 工程落地细化：① 风暴丢弃计数器 `m_stormDroppedCount` 按批次 `exchange(0)` 原子读取并重置，信号 `alarmStormTriggered` 增加 `droppedCount` 参数；② `ScopedAuthGuard` 析构函数显式 `noexcept`，`AuthManager::recordAudit` 必须非阻塞且不抛异常，避免 `std::terminate` |
+| V1.5 | 2026-08-30 | 业务架构师 | Phase 3 切片 10 落地：① §1.2 `BusinessStateMachine`（Station/Device/Point 三层 FSM：Config→Running→Stats，跨层一致性约束，Device 全部非 Running 才可升 Station Stats）实现；② §2.2-2.4 `AlarmEntities.h` + `IAlarmEngine.h` + `AlarmEngine.h/.cpp` 实现完整告警引擎（迟滞 + On/Off-Delay + 同源抑制 + 风暴抑制 `MAX_PENDING_STORM=2000` + droppedCount 原子 + Critical→blackBoxRequested 依赖倒置）；③ §3.2 `DeviceSboGuard`（二维 Key 分桶互斥 + QMutex + ArmedOccupant 纯数据无 QTimer 指针）实现；④ §3.3 `SboStateMachine`（Idle→Selecting→Armed→Executed/Timeout/Aborted 三定时器：5s 倒计时 + 500ms 链路抖动 + 2s 执行监护；急停 3s；FR-CTRL-07 断线自动清锁 + 盲点 ③ 链路恢复 stop m_flappingTimer）实现。RBAC（§4 ENS-LLD-403）属 V1.6+ 任务，本次未落地。 |
 
 ---
 

@@ -89,8 +89,16 @@ target_include_directories(ens_datahub PUBLIC
 target_link_libraries(ens_datahub PUBLIC ens::protocol ens::3rdparty)
 
 # ---------------- L4 业务逻辑层（SHARED） ----------------
+# Phase 3 4.3.1 BusinessStateMachine (Station/Device/Point 三层 FSM)。
+# Phase 3 4.3.2 AlarmEngine (迟滞 + On/Off-Delay + 同源抑制 + 风暴抑制 MAX_PENDING_STORM=2000)。
+# Phase 3 4.3.3 SboStateMachine + DeviceSboGuard (Select→Armed(5s)→Operate,断线/超时清锁)。
+# Critical 告警通过依赖倒置 emit blackBoxRequested → 外部连 BlackBoxManager(不在此层)。
 add_library(ens_business SHARED
-    src/business/business_anchor.cpp)
+    src/business/business_anchor.cpp
+    src/business/BusinessStateMachine.cpp
+    src/business/AlarmEngine.cpp
+    src/business/DeviceSboGuard.cpp
+    src/business/SboStateMachine.cpp)
 add_library(ens::business ALIAS ens_business)
 target_include_directories(ens_business PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/business)
