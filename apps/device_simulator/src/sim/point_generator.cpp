@@ -96,6 +96,12 @@ double PointGenerator::totalVoltageFromOcv(double ocvV) noexcept {
 void PointGenerator::generateTick() {
     if (m_pt == nullptr) return;
     const double dtS = m_cfg.tickMs / 1000.0;
+    const uint32_t dtMs = m_cfg.tickMs;
+
+    // 推进所有 FaultSession FSM（RECOVERING 斜率回归 / ACTIVE→RECOVERING 自然到期）
+    if (m_fi != nullptr) {
+        m_fi->tickSessions(dtMs);
+    }
 
     for (uint8_t slave : m_slaves) {
         try {
@@ -108,9 +114,26 @@ void PointGenerator::generateTick() {
                 case DeviceKind::Liquid: evolveAux(slave, dtS);   break;
                 case DeviceKind::Fire:   evolveAux(slave, dtS);   break;
             }
-            // Phase 3.x FaultInjector::resolveOverride 叠加（先 publish 干净 baseline）
         } catch (...) {
             // SIM-IMP §6.2:生成线程异常时该从站值保持上一帧
+        }
+
+        // 故障叠加：遍历本从站所有 HoldingRegister 点,调 resolveOverride 覆盖 m_work
+        // （B7 范围:仅寄存器值覆盖;告警字置位延后到 B8）
+        if (m_fi != nullptr) {
+            const auto& v = m_pt->onSlave(slave);
+            for (const auto& p : v) {
+                if (p.regType != RegisterType::HoldingRegister) continue;
+                const FaultEffect eff = m_fi->resolveOverride(slave, p.registerAddr);
+                if (!eff.active) continue;
+                // dropLink 标志由 B8 IO 层消费,此处不写
+                if (eff.dropLink) continue;
+                // 工程值 → raw:raw = (eng - offset) / scale,clamp uint16
+                const float scale = (p.scaleFactor != 0.0f) ? p.scaleFactor : 1.0f;
+                const float rawF  = (eff.value - p.offset) / scale;
+                const uint16_t raw = static_cast<uint16_t>(std::clamp(rawF, 0.0f, 65535.0f));
+                m_work[slave].setHolding(p.registerAddr, raw);
+            }
         }
 
         // CoW publish 到 RCU;m_bank==nullptr(纯单测)时 work 即最终结果

@@ -31,6 +31,7 @@ add_executable(ens_tests
     unit/test_alarm_engine.cpp
     unit/test_sbo_state_machine.cpp
     unit/test_business_integration.cpp
+    unit/test_fault_injector.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -44,6 +45,7 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/register_bank.cpp
     ../apps/device_simulator/src/sim/sim_config.cpp
     ../apps/device_simulator/src/sim/point_generator.cpp
+    ../apps/device_simulator/src/sim/FaultInjector.cpp
     ../apps/device_simulator/src/sim/modbus_dispatch.cpp
     ../apps/device_simulator/src/sim/modbus_slave_emulator.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp

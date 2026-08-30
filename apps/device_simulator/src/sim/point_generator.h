@@ -24,6 +24,7 @@
 
 #include "core/point_table.h"
 #include "sim/register_bank.h"
+#include "sim/FaultInjector.h"
 #include "sim_config.h"
 
 namespace ens::sim {
@@ -101,6 +102,9 @@ public:
     /// 给 RCU bank 注入（SimulatorEngine 调用,Phase 1 暂时未用）
     void attach(RegisterBank* bank) noexcept { m_bank = bank; }
 
+    /// 注入 FaultInjector（B7 Phase 3 切片 11）；不拥有,SimulatorEngine/外部持有生命周期
+    void attachFi(FaultInjector* fi) noexcept { m_fi = fi; }
+
     /// 强制重置 seed（场景脚本重启时）—— 主程序侧启动一次即用,不应频繁调用
     void reseed(uint32_t s) noexcept;
 
@@ -136,6 +140,7 @@ private:
     std::vector<uint8_t>                           m_slaves;
     uint8_t     m_pcsRefSlave = 0;   // 首个 kind==Pcs 的 slave(Meter 有功参考源),0=无 PCS
     RegisterBank*                                  m_bank = nullptr;   // 非拥有,SimulatorEngine 持有
+    FaultInjector*                                 m_fi   = nullptr;   // 非拥有,B7 切片 11 接入
 };
 
 }  // namespace ens::sim
