@@ -66,6 +66,7 @@ target_link_libraries(ens_protocol PUBLIC ens::channel ens::3rdparty)
 # Phase 3 4.1.3: DataBus（观察者模式广播，订阅表 QReadWriteLock 保护）。
 # Phase 3 4.1.4: DownSampler 降采样聚合（Min/Max/Avg/Count/First/Last）。
 # Phase 3 4.1.5: SQLiteDataAccess + L2HistoryStore（双缓冲 Swap + 按月分库批量 INSERT）。
+# Phase 3 4.1.6: BlackBoxManager + CriticalSwapFile + PlatformMMap（黑匣子 mmap 即时落盘）。
 # Sample.h 16B 对齐契约由 datahub_anchor 编译期 static_assert 闸口(LLD-200 §3.1)。
 add_library(ens_datahub STATIC
     src/datahub/datahub_anchor.cpp
@@ -73,7 +74,14 @@ add_library(ens_datahub STATIC
     src/datahub/DataBus.cpp
     src/datahub/DownSampler.cpp
     src/datahub/SQLiteDataAccess.cpp
-    src/datahub/L2HistoryStore.cpp)
+    src/datahub/L2HistoryStore.cpp
+    src/datahub/CriticalSwapFile.cpp
+    src/datahub/BlackBoxManager.cpp)
+if(WIN32)
+    target_sources(ens_datahub PRIVATE src/datahub/platform/Win32MMap.cpp)
+else()
+    target_sources(ens_datahub PRIVATE src/datahub/platform/PosixMMap.cpp)
+endif()
 add_library(ens::datahub ALIAS ens_datahub)
 target_include_directories(ens_datahub PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/datahub)

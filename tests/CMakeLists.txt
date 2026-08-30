@@ -25,6 +25,8 @@ add_executable(ens_tests
     unit/test_down_sampler.cpp
     unit/test_sqlite_data_access.cpp
     unit/test_l2history_store.cpp
+    unit/test_platform_mmap.cpp
+    unit/test_blackbox.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
