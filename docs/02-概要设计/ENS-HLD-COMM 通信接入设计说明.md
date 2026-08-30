@@ -939,12 +939,11 @@ TCP 链路为**全双工**，不同从站的请求可**并发发出**，各自�
     // 与 RS485 不同: 不阻塞等待, 事件驱动
     for slave in link.activeslaves:
         if slave 当前无在途请求 && 到达其轮询周期:
-            tid = link.txIdAllocator.next(link.inflightBits.bitset())  // O(1) 跳过已在途 ID
+            tid = link.txIdAllocator.allocate()   // O(1) 位图扫描最低空闲 ID 并原子占用
             if tid == INVALID: continue          // ID 池耗尽, 记录严重错误
             channel.write(buildTcpFrame(tid, slave.req))
-            link.inflightBits.mark(tid)
-            link.inflightReqs[tid] = {slave, deadline=now()+timeout}
-    // 定时器扫描在途请求, 超时 → unmark(tid); reset req; onResponseReceived(sid, false)
+            link.inflightReqs[tid] = {slave, deadline=now()+timeout}   // 登记配对
+    // 定时器扫描在途请求, 超时 → release(tid); erase req; onResponseReceived(sid, false)
 ```
 
 ### 3.4 高频专线与优先级插队
@@ -985,53 +984,48 @@ TCP 链路为**全双工**，不同从站的请求可**并发发出**，各自�
 #pragma once
 
 #include <cstdint>
-#include <atomic>
 #include <bitset>
-#include <optional>
+#include <memory>
 
 namespace ens::protocol {
 
-// 16-bit Transaction ID 的占用位图: O(1) 查询 / 占用, 无哈希冲突, 无动态分配
+// 16-bit Transaction ID 占用位图: O(1) 查询 / 占用, 无哈希冲突, 无动态分配
+// V1.5.4: 接口统一为 allocate()/release()/clearInFlight()/isAllocated()（对齐 DevGuide §2A
+//         与 ENS-LLD-100 §4.3.6 V1.5 / 实现）。废弃 V1.5.3 的 next(外部位图)+InFlightIdMap
+//         两步式: fetch_add 回绕存在撞上在途 ID 的窗口, 且"取号+登记"两步之间有空窗;
+//         allocate() 位图扫描最低空闲位并原子占用, 语义更优。InFlightIdMap 并入本类。
 class TransactionIdAllocator {
 public:
     static constexpr uint16_t INVALID_ID = 0;  // 0 保留为"无效/特殊"ID, 分配从 1 开始
 
-    TransactionIdAllocator() : m_next(1) {}
+    TransactionIdAllocator() : m_used(std::make_unique<std::bitset<65536>>()) {}
 
-    // 返回一个当前不在 inFlight 位图中的 16-bit Transaction ID
-    // 若所有 65535 个 ID 都在途(极端不可能), 返回 INVALID_ID 并让调用方报错/丢弃该请求
-    uint16_t next(const std::bitset<65536>& inFlight) {
-        for (int i = 0; i < 65535; ++i) {
-            uint16_t id = m_next.fetch_add(1, std::memory_order_relaxed);
-            if (id == INVALID_ID) {
-                id = m_next.fetch_add(1, std::memory_order_relaxed); // 跳过保留 0
-            }
-            if (!inFlight.test(id))
-                return id;
+    // 禁用拷贝/移动（或经 unique_ptr 默认实现移动）, 避免 8 KiB 逐位拷贝
+    TransactionIdAllocator(const TransactionIdAllocator&) = delete;
+    TransactionIdAllocator& operator=(const TransactionIdAllocator&) = delete;
+    TransactionIdAllocator(TransactionIdAllocator&&) = default;
+    TransactionIdAllocator& operator=(TransactionIdAllocator&&) = default;
+
+    // 分配 [1,65535] 中最低空闲 ID 并原子占用; 耗尽返回 INVALID_ID
+    uint16_t allocate() noexcept {
+        for (uint32_t id = 1; id <= 65535; ++id) {   // uint32_t 防 16-bit 回绕死循环
+            if (!m_used->test(id)) { m_used->set(id); return static_cast<uint16_t>(id); }
         }
-        return INVALID_ID;  // 理论上不会发生; 调用方应记录为严重错误
+        return INVALID_ID;
     }
 
-    // 批量版本: 一次预分配并标记 n 个 ID 在位图中 (可选, 用于批量写)
-    std::optional<uint16_t> allocateIfFree(const std::bitset<65536>& inFlight) {
-        return next(inFlight);
+    void release(uint16_t id) noexcept {          // 释放 ID 使其可复用（0 忽略）
+        if (id != INVALID_ID) m_used->reset(id);
     }
 
-    void reset() noexcept { m_next.store(1, std::memory_order_relaxed); }
+    void clearInFlight() noexcept { m_used->reset(); }  // 断链/重连时清空在途
+
+    bool isAllocated(uint16_t id) const noexcept {      // 响应路由二次校验用
+        return id != INVALID_ID && m_used->test(id);
+    }
 
 private:
-    std::atomic<uint16_t> m_next;  // uint16_t 自增天然模 65536 回绕
-};
-
-// InFlight 位图容器封装: 提供原子性 mark/unmark 与全部清除, 避免 unordered_set 的哈希开销
-class InFlightIdMap {
-    std::bitset<65536> m_bits;  // 65536 bits = 8 KiB, 固定栈/静态开销
-public:
-    bool contains(uint16_t id) const noexcept { return m_bits.test(id); }
-    void mark(uint16_t id) noexcept { m_bits.set(id); }
-    void unmark(uint16_t id) noexcept { m_bits.reset(id); }
-    void clear() noexcept { m_bits.reset(); }
-    const std::bitset<65536>& bitset() const noexcept { return m_bits; }
+    std::unique_ptr<std::bitset<65536>> m_used;   // 8 KiB 位图置于堆上; 0=空闲 1=已分配
 };
 
 }  // namespace ens::protocol
@@ -1041,20 +1035,19 @@ public:
 
 | 触发场景 | 清理动作 | 上层影响 |
 |---------|---------|---------|
-| 请求超时 | `inflightBits.unmark(tid)` + `inflightReqs[tid].reset()`，并 `onResponseReceived(sid, false)` | 该从站超时计数++，触发熔断 |
-| 收到响应 | `inflightBits.unmark(tid)` + `inflightReqs[tid].reset()`，正常交付 | 无 |
-| TCP `disconnected` / 重连前 | `inflightBits.clear()` + 遍历 `inflightReqs` 中所有有效项，`onResponseReceived(sid, false)` | 所有在途从站均按超时处理，链路标记离线 |
-| `close()` 被调用 | 同上清空 + `txIdAllocator.reset()` | 资源释放，避免悬空回调 |
+| 请求超时 | `txIdAllocator.release(tid)` + `inflightReqs[tid].reset()`，并 `onResponseReceived(sid, false)` | 该从站超时计数++，触发熔断 |
+| 收到响应 | 按 tid 命中配对 → `release(tid)` + `inflightReqs[tid].reset()`，路由交付 | 正常；未命中视为野响应丢弃 |
+| TCP `disconnected` / 重连前 | `txIdAllocator.clearInFlight()` + 遍历 `inflightReqs` 中所有有效项，`onResponseReceived(sid, false)` | 所有在途从站均按超时处理，链路标记离线 |
+| `close()` 被调用 | 同上清空（`clearInFlight()`） | 资源释放，避免悬空回调 |
 
 ```
 算法: onTcpDisconnected(link):
     // 原子性清空位图与请求上下文, 后续新响应无法匹配旧 ID
     staleReqs = std::move(link.inflightReqs)
-    link.inflightBits.clear()
+    link.txIdAllocator.clearInFlight()           // 清空位图, 防 16-bit 回绕错配
     for tid in 1..65535:
         if staleReqs[tid].has_value:
             onResponseReceived(staleReqs[tid]->slave.id, /*success=*/false)
-    link.txIdAllocator.reset()                 // 重置 ID 计数器, 减少重连后 ID 碎片
     emit connectionChanged(false)
 ```
 
@@ -1067,12 +1060,12 @@ public:
 ```
 算法: onTcpResponse(link, frame):
     tid = parseMbapTransactionId(frame)
-    if !link.inflightBits.contains(tid):
+    if !link.txIdAllocator.isAllocated(tid):
         // 迟到响应或已清理 ID: 直接丢弃, 不上送, 仅计数 staleResponseCount
         link.staleResponseCount++
         return
     req = link.inflightReqs[tid].value()
-    link.inflightBits.unmark(tid)              // 立刻释放 ID
+    link.txIdAllocator.release(tid)            // 立刻释放 ID
     link.inflightReqs[tid].reset()             // 清空请求上下文, 防止重复处理
     if parseResponse(frame) 成功:
         deliver(req.slave, response)
@@ -1110,22 +1103,16 @@ classDiagram
         -type: Transport
         -queue: Deque~PollTask~
         -highPriorityQueue: Deque~PollTask~
-        -inflightBits: InFlightIdMap
-        -inflightReqs: Array~65536, optional InflightReq~
+        -inflightReqs: Array~65536, optional InflightReq~   // tid → 请求上下文配对表
         -txIdAllocator: TransactionIdAllocator
         +clearInflightOnDisconnect() void
     }
-    class InFlightIdMap {
-        -m_bits: bitset~65536~
-        +contains(id: uint16) bool
-        +mark(id: uint16) void
-        +unmark(id: uint16) void
-        +clear() void
-    }
     class TransactionIdAllocator {
-        -m_next: atomic~uint16_t~
-        +next(inFlightBits: bitset~65536~) uint16_t
-        +reset() void
+        -m_used: unique_ptr bitset 65536
+        +allocate() uint16
+        +release(id: uint16) void
+        +clearInFlight() void
+        +isAllocated(id: uint16) bool
     }
     class SlavePollState {
         -consecutiveFailures: int

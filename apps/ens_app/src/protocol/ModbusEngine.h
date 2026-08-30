@@ -8,7 +8,9 @@
 //     moveToThread 到 worker 线程,Qt::AutoConnection 自动选 QueuedConnection 跨线程派发,
 //     slot 在 worker 线程 context 内执行(无锁)。
 //   * writeRequest 组帧后 IChannel::write;TCP 模式下分配 TransactionId 写入 MBAP,
-//     响应解析成功后按 tid 释放回收(位图不泄漏)。inFlight 配对路由属 Phase 4。
+//     并按 tid 登记 inFlight 配对表(linkId + slave);响应解析成功后按 tid 精确路由回
+//     对应 linkId,再释放回收(位图不泄漏)。野响应(无对应在途)丢弃并报 frameError(Spurious)。
+//   * 断链(connectionChanged=false)清空 inFlight 配对表 + 位图,防 16-bit 回绕错配。
 //   * 解析成功 → emit responseParsed(linkId, slave, ModbusResponse);
 //     解析失败 → emit frameError(linkId, slave, kind) — PollScheduler/监控层订阅。
 //
@@ -17,12 +19,11 @@
 //   本实现用 Qt signal/slot connect + moveToThread(worker 线程 context),
 //   跨线程安全由 Qt::AutoConnection(QueuedConnection)保证。
 //
-// 不做(Phase 2 后续 / Phase 3 收口):
+// 不做(Phase 3 收口):
 //   * Sample.value 与 PointTable 缩放还原 — 留给 PollScheduler 3.1.4 + L1SnapshotStore 4.x。
 //   * 超时重发/熔断/降级 — 3.1.4 PollScheduler 职责。
-//   * 多链路 ID → linkId 路由(同一 IChannel 多个并发请求的 tid 配对) —
-//     当前协议层只暴露 linkId(由调用方 PollScheduler 提供),engine 内仅透传;
-//     TxId 分配/回收路径已就位,Phase 4 串接。
+//   * 断链后对在途请求逐一上报失败 — 由上层(PollScheduler)在 connectionChanged(false)
+//     时按超时语义统一处理;engine 仅清空在途防错配。
 
 #pragma once
 
@@ -32,6 +33,7 @@
 #include <cstdint>
 
 #include <memory>
+#include <unordered_map>
 
 #include <QByteArray>
 #include <QObject>
@@ -56,6 +58,7 @@ enum class FrameErrorKind : uint8_t {
     Timeout     = 3,   // 超时未收到响应(由 PollScheduler 触发,此处保留枚举值)
     Exception   = 4,   // 从站返回 0x80|FC 异常帧(可重试语义留给上层)
     Unsupported = 5,   // 收到未知功能码
+    Spurious    = 6,   // TCP 野响应:无对应在途请求(延迟旧响应/串扰)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,12 +106,25 @@ public slots:
     /// 接 IChannel::dataReceived(QByteArray) — worker 线程 context(经 Qt QueuedConnection)。
     void onBytesReceived(const QByteArray& data);
 
+    /// 接 IChannel::connectionChanged(bool) — 断链时清空在途配对,防 16-bit 回绕错配。
+    void onConnectionChanged(bool connected);
+
 private:
     // ── 内部 ──
     // 注意:IChannel 由外部 owner 管理(Phase 3.x PollScheduler 持有),
     // 这里只持有 raw 指针 + connect。ModbusEngine destroy 时会自动 disconnect。
     ens::channel::IChannel* m_channel = nullptr;       // no ownership
     Transport              m_transport;
+
+    // TCP 在途请求配对表:tid → (linkId, slaveAddress)。
+    // writeRequest 登记,响应解析后按 tid 精确路由回对应 linkId 并移除;
+    // 未命中视为野响应(Spurious)丢弃。断链时整体清空。
+    struct InFlightEntry {
+        uint32_t linkId       = 0;
+        uint8_t  slaveAddress = 0;
+    };
+    std::unordered_map<uint16_t, InFlightEntry> m_inFlight;
+
     // pImpl 隐藏 Accumulator / TxIdAllocator 实现细节(头里只前向声明)
     std::unique_ptr<ModbusStreamAccumulator>  m_accumulator;
     std::unique_ptr<TransactionIdAllocator>   m_txIdAllocator;

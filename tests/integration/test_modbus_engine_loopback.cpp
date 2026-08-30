@@ -124,9 +124,15 @@ TEST_CASE("modbus_engine loopback: 1 normal FC03 read returns valid sample",
                      });
 
     engine.bindToChannel();
-    const auto req = makeReadFrame(0x0001, /*addr=*/0, /*qty=*/3);
-    ch->write(QByteArray(reinterpret_cast<const char*>(req.data()),
-                         static_cast<int>(req.size())));
+    // 必须经 writeRequest 发请求:engine 按 tid 登记 inFlight 配对表,
+    // 响应回来时未命中配对会被判野响应丢弃(配对路由收口后的契约)。
+    ModbusRequest req;
+    req.transport       = Transport::Tcp;
+    req.slaveAddress    = 1;
+    req.functionCode    = 0x03;
+    req.startingAddress = 0;
+    req.quantity        = 3;
+    REQUIRE(engine.writeRequest(req, /*linkId=*/1) > 0);
 
     // 持续 processEvents 排空响应(parsed 异步通过 ModbusEngine → emit responseParsed)
     const auto tStart = std::chrono::steady_clock::now();
@@ -202,9 +208,14 @@ TEST_CASE("modbus_engine loopback: 2 malformed frame dropped - downstream not po
         QObject::connect(&engine, &ModbusEngine::responseParsed,
                          [&](uint32_t, uint8_t, const ModbusResponse&) { ++parsed2; });
 
-        const auto good = makeReadFrame(0x0003, /*addr=*/0, /*qty=*/3);
-        ch->write(QByteArray(reinterpret_cast<const char*>(good.data()),
-                             static_cast<int>(good.size())));
+        // 经 writeRequest 登记在途,响应才能命中配对路由(与 Part A 恶意裸帧区分)
+        ModbusRequest req;
+        req.transport       = Transport::Tcp;
+        req.slaveAddress    = 1;
+        req.functionCode    = 0x03;
+        req.startingAddress = 0;
+        req.quantity        = 3;
+        REQUIRE(engine.writeRequest(req, /*linkId=*/1) > 0);
         const auto tStart = std::chrono::steady_clock::now();
         while (parsed2.load() == 0 &&
                std::chrono::steady_clock::now() - tStart < std::chrono::seconds(3)) {

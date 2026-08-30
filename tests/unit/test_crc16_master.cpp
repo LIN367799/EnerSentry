@@ -53,12 +53,15 @@ TEST_CASE("crc16_modbus: table implementation matches bitwise reference (full do
 }
 
 TEST_CASE("crc16_modbus: verify matches low-byte-first frame layout", "[master][crc16]") {
-    // 用 bitwise 参考实现算出"已知正确 CRC",再与查表版产出的低字节在前的 2 字节拼成帧。
-    const uint8_t byte = 0x01;
-    const uint16_t crc = crc16Bitwise(&byte, 1);
-    std::vector<uint8_t> frame = {byte,
+    // 最小合法 RTU 帧 = addr+fc+CRC = 4 字节（与 parseRtuResponse len<4 守卫一致）。
+    // 用 bitwise 参考实现算 2 字节 PDU 的"已知正确 CRC",拼成低字节在前的 4 字节帧。
+    const uint8_t pdu[] = {0x01, 0x03};
+    const uint16_t crc = crc16Bitwise(pdu, sizeof(pdu));
+    std::vector<uint8_t> frame = {pdu[0],
+                                 pdu[1],
                                  static_cast<uint8_t>(crc & 0xFF),
                                  static_cast<uint8_t>(crc >> 8)};
+    REQUIRE(frame.size() == 4u);
     REQUIRE(crc16ModbusVerify(frame.data(), frame.size()));
 }
 
@@ -72,11 +75,14 @@ TEST_CASE("crc16_modbus: verify rejects single-bit corrupt frame", "[master][crc
     REQUIRE_FALSE(crc16ModbusVerify(frame.data(), frame.size()));
 }
 
-TEST_CASE("crc16_modbus: verify rejects too-short frame (< 3 bytes)", "[master][crc16]") {
-    uint8_t a = 0x01, b = 0x02;
+TEST_CASE("crc16_modbus: verify rejects too-short frame (< 4 bytes)", "[master][crc16]") {
+    uint8_t a = 0x01;
+    REQUIRE_FALSE(crc16ModbusVerify(&a, 0));
     REQUIRE_FALSE(crc16ModbusVerify(&a, 1));
     REQUIRE_FALSE(crc16ModbusVerify(&a, 2));
-    REQUIRE_FALSE(crc16ModbusVerify(&b, 0));
+    // 边界回归锁定（0b1cf90 改 3→4）：3 字节帧缺 1 字节 CRC,必须拒绝
+    const uint8_t frame3[] = {0x01, 0x03, 0x00};
+    REQUIRE_FALSE(crc16ModbusVerify(frame3, sizeof(frame3)));
 }
 
 TEST_CASE("crc16_modbus: table is 256 entries of 16-bit values", "[master][crc16]") {

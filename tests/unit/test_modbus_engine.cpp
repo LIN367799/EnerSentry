@@ -49,6 +49,9 @@ public:
     }
     void feedBytes(const std::vector<uint8_t>& v) { feedBytes(v.data(), v.size()); }
 
+    // 测试钩子:模拟 TCP 断链/重连(触发 connectionChanged 信号)
+    void emitConnectionChanged(bool connected) { emit connectionChanged(connected); }
+
     // 测试钩子:抓最近一次 write() 的字节
     QByteArray lastWrittenBytes() const { return m_lastWrite; }
     int         lastWrittenCount() const { return m_lastWriteCount; }
@@ -337,6 +340,15 @@ TEST_CASE("modbus_engine: TCP MBAP response parsed via parseTcpResponse",
     QObject::connect(&engine, &ModbusEngine::responseParsed, &engine,
                      [&](uint32_t l, uint8_t s, const ModbusResponse& r) { parsed.slot(l, s, r); });
 
+    // 先发一个请求登记 inFlight(分配 tid=1,linkId=77),响应必须命中配对才能解析
+    ModbusRequest req;
+    req.transport      = Transport::Tcp;
+    req.slaveAddress   = 1;
+    req.functionCode   = 0x03;
+    req.startingAddress = 0;
+    req.quantity       = 1;
+    REQUIRE(engine.writeRequest(req, /*linkId=*/77) > 0);
+
     // TCP FC03 响应:[tid=1][pid=0][len=9][unitId=1][FC=3][byteCount=6][3 regs]
     //   = 6 + 9 = 15 字节
     const std::vector<uint8_t> tcpResp = {
@@ -351,6 +363,7 @@ TEST_CASE("modbus_engine: TCP MBAP response parsed via parseTcpResponse",
     channel->feedBytes(tcpResp);
 
     REQUIRE(parsed.count.load() == 1);
+    REQUIRE(std::get<0>(*parsed.last) == 77u);   // linkId 经配对表透传(非 0)
     REQUIRE(std::get<1>(*parsed.last) == 1u);
     REQUIRE(std::get<2>(*parsed.last).registerValues.size() == 3u);
     REQUIRE(std::get<2>(*parsed.last).registerValues[0] == 0x022Bu);
@@ -375,7 +388,125 @@ TEST_CASE("modbus_engine: TCP non-zero protocolId rejected (frameError Malformed
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ④ 多帧粘包:一次 dataReceived 含 2 完整帧
+// ④ TxId inFlight 配对路由(收口):乱序响应精确路由、野响应丢弃、断链清在途
+// ─────────────────────────────────────────────────────────────────────────────
+TEST_CASE("modbus_engine: TCP responses routed to matching linkId out-of-order",
+    "[master][engine][tcp][txid][routing]") {
+    // 配对路由收口:同一 channel 并发多个请求,响应按 tid 精确路由回对应 linkId,
+    // 与到达顺序无关(乱序不串台)——这正是 TCP 多请求并发的语义保障。
+    auto* channel = new MockIChannel;
+    ModbusEngine engine(channel, Transport::Tcp);
+    engine.bindToChannel();
+
+    std::vector<std::tuple<uint32_t, uint8_t, ModbusResponse>> received;
+    QObject::connect(&engine, &ModbusEngine::responseParsed, &engine,
+                     [&](uint32_t l, uint8_t s, const ModbusResponse& r) {
+                         received.emplace_back(l, s, r);
+                     });
+
+    ModbusRequest req;
+    req.transport      = Transport::Tcp;
+    req.slaveAddress   = 1;
+    req.functionCode   = 0x03;
+    req.startingAddress = 0;
+    req.quantity       = 1;
+
+    // 请求 A(linkId=42 → tid=1) 与请求 B(linkId=43 → tid=2)
+    REQUIRE(engine.writeRequest(req, /*linkId=*/42) > 0);
+    REQUIRE(engine.writeRequest(req, /*linkId=*/43) > 0);
+
+    auto makeTcpResp = [](uint16_t tid, uint16_t val) {
+        return std::vector<uint8_t>{
+            static_cast<uint8_t>(tid >> 8), static_cast<uint8_t>(tid & 0xFF),
+            0x00, 0x00, 0x00, 0x05,        // pid=0, length=5(unitId+FC+byteCount+2B data)
+            0x01, 0x03, 0x02,
+            static_cast<uint8_t>(val >> 8), static_cast<uint8_t>(val & 0xFF)};
+    };
+
+    // 乱序:先回 B(tid=2),再回 A(tid=1)
+    channel->feedBytes(makeTcpResp(/*tid=*/2, /*val=*/0x2222));
+    channel->feedBytes(makeTcpResp(/*tid=*/1, /*val=*/0x1111));
+
+    REQUIRE(received.size() == 2u);
+    REQUIRE(std::get<0>(received[0]) == 43u);   // tid=2 → linkId=43
+    REQUIRE(std::get<2>(received[0]).registerValues[0] == 0x2222u);
+    REQUIRE(std::get<0>(received[1]) == 42u);   // tid=1 → linkId=42
+    REQUIRE(std::get<2>(received[1]).registerValues[0] == 0x1111u);
+}
+
+TEST_CASE("modbus_engine: spurious TCP response (no in-flight match) dropped + frameError Spurious",
+    "[master][engine][tcp][txid][neg]") {
+    auto* channel = new MockIChannel;
+    ModbusEngine engine(channel, Transport::Tcp);
+    engine.bindToChannel();
+
+    SignalCounter<uint32_t, uint8_t, const ModbusResponse&> parsed;
+    SignalCounter<uint32_t, uint8_t, FrameErrorKind> err;
+    QObject::connect(&engine, &ModbusEngine::responseParsed, &engine,
+                     [&](uint32_t l, uint8_t s, const ModbusResponse& r) { parsed.slot(l, s, r); });
+    QObject::connect(&engine, &ModbusEngine::frameError, &engine,
+                     [&](uint32_t l, uint8_t s, FrameErrorKind k) { err.slot(l, s, k); });
+
+    // 未 writeRequest,直接喂 tid=0x1234 的合法 TCP 响应 → 无在途配对 → 野响应
+    const std::vector<uint8_t> spurious = {
+        0x12, 0x34,        // tid
+        0x00, 0x00,        // pid = 0
+        0x00, 0x05,        // length = 5
+        0x01, 0x03, 0x02, 0xAA, 0xBB
+    };
+    channel->feedBytes(spurious);
+
+    REQUIRE(parsed.count.load() == 0);
+    REQUIRE(err.count.load() == 1);
+    REQUIRE(std::get<2>(*err.last) == FrameErrorKind::Spurious);
+}
+
+TEST_CASE("modbus_engine: connection lost clears in-flight (late response spurious, tid re-allocated)",
+    "[master][engine][tcp][txid][reconnect]") {
+    auto* channel = new MockIChannel;
+    ModbusEngine engine(channel, Transport::Tcp);
+    engine.bindToChannel();
+
+    SignalCounter<uint32_t, uint8_t, const ModbusResponse&> parsed;
+    SignalCounter<uint32_t, uint8_t, FrameErrorKind> err;
+    QObject::connect(&engine, &ModbusEngine::responseParsed, &engine,
+                     [&](uint32_t l, uint8_t s, const ModbusResponse& r) { parsed.slot(l, s, r); });
+    QObject::connect(&engine, &ModbusEngine::frameError, &engine,
+                     [&](uint32_t l, uint8_t s, FrameErrorKind k) { err.slot(l, s, k); });
+
+    ModbusRequest req;
+    req.transport      = Transport::Tcp;
+    req.slaveAddress   = 1;
+    req.functionCode   = 0x03;
+    req.startingAddress = 0;
+    req.quantity       = 1;
+
+    // 请求登记 tid=1
+    REQUIRE(engine.writeRequest(req, /*linkId=*/9) > 0);
+
+    // 断链 → engine 清空配对表 + 位图
+    channel->emitConnectionChanged(false);
+
+    // 断链后旧 tid=1 的响应才回来 → 已不在在途 → Spurious 丢弃,不上抛
+    const std::vector<uint8_t> lateResp = {
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x05,
+        0x01, 0x03, 0x02, 0xAB, 0xCD
+    };
+    channel->feedBytes(lateResp);
+    REQUIRE(parsed.count.load() == 0);
+    REQUIRE(err.count.load() == 1);
+    REQUIRE(std::get<2>(*err.last) == FrameErrorKind::Spurious);
+
+    // 位图已清:新请求从 tid=1 重新分配
+    REQUIRE(engine.writeRequest(req, /*linkId=*/9) > 0);
+    const auto f2 = channel->lastWrittenBytes();
+    const uint16_t tid2 = static_cast<uint16_t>(
+        (static_cast<uint8_t>(f2[0]) << 8) | static_cast<uint8_t>(f2[1]));
+    REQUIRE(tid2 == 1u);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⑤ 多帧粘包:一次 dataReceived 含 2 完整帧
 // ─────────────────────────────────────────────────────────────────────────────
 TEST_CASE("modbus_engine: concatenated frames in one feed produce 2 responseParsed emissions",
     "[master][engine][rtu][concatenated]") {

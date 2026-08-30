@@ -18,6 +18,7 @@
 | V1.2 | 2026-08-13 | 高级 C++ 通信与后端工程师 | 评审后修订：① §4.2.1 修正 `ModbusStreamAccumulator::append()` 环形覆盖时 `m_read` 指针未前移的 bug；② §4.3.2 新增 `PollScheduler` 低优先级（LOW）饥饿保护机制（最大连续抢占计数）；③ §4.3.6 为 `std::bitset<65536>` 补充移动/拷贝构造防护（`unique_ptr` 包裹或 `= delete`）。 |
 | V1.3 | 2026-08-13 | 高级 C++ 通信与后端工程师 | 评审后修订：① §4.4.2 `PointTable::resolve` 中间变量与 `Sample::value` 改为 `double`，避免 Uint32/Int32 转 `float` 的 IEEE 754 精度丢失；② §4.4.3 新增 `PointTable` 热加载 RCU 原子替换机制；③ §4.3.2.1 `kMaxConsecutivePreempt` 由硬编码改为按链路参数配置。 |
 | V1.4 | 2026-08-13 | 高级 C++ 通信与后端工程师 | 评审后修订：① §3.2.2 为 `interFrameDelayUs` 增加 Modbus Serial Line Protocol Spec V1.02 的波特率 > 19200 分支，返回固定 1750 µs；② §4.3.2.1 为 SBO 控制写指令（HIGH）增加风暴防护：连续 `maxConsecutiveSboBurst` 次后强制让出 1 个槽位给 NORMAL 队列；③ §4.2.1 `ModbusStreamAccumulator::tryExtractFrame` 增加异常响应帧识别，功能码最高位为 1 时按固定 5 字节（RTU）/ 9 字节（TCP）提取，避免等待动态长度导致超时。 |
+| V1.5 | 2026-08-30 | 架构师 AI 搭档 | 评审后修订：① §4.3.6 `TransactionIdAllocator` 接口统一为 `allocate()/release()/clearInFlight()/isAllocated()`（对齐 DevGuide §2A 与实现），删除 V1.0 的 `next()/markInFlight()/unmark()` 两步式（fetch_add 回绕撞在途 ID 窗口 + 取号/登记空窗缺陷）；② §4.2.2 `ModbusEngine` TCP 响应按 TxId 精确配对路由：`writeRequest` 登记 `tid → (linkId, slaveAddress)`，响应命中后路由回对应 linkId 再释放；未命中野响应丢弃并报 `frameError(Spurious)`；断链清空配对表 + 位图防 16-bit 回绕错配。 |
 
 ---
 
@@ -1172,53 +1173,57 @@ RS485 为半双工，单条总线上**绝对禁止并发下发**（否则多从�
 
 ```cpp
 // src/protocol/TransactionIdAllocator.h（节选，O(1) 位图分配，unique_ptr 包裹 8KB）
+// V1.5：接口统一为 allocate()/release()/clearInFlight()/isAllocated()（对齐 DevGuide §2A
+//       与实现），取消 V1.0 的 next()/markInFlight()/unmark() 两步式：fetch_add 回绕存在
+//       撞上在途 ID 的窗口，且"取号+登记"两步之间有空窗；allocate() 位图扫描最低空闲位
+//       并原子占用，语义更优、无空窗。
 #include <bitset>
 #include <memory>
-#include <atomic>
 #include <cstdint>
 
 class TransactionIdAllocator {
 public:
     static constexpr uint16_t INVALID_ID = 0;   // 0 保留为无效，分配从 1 开始
 
-    TransactionIdAllocator()
-        : m_inFlight(std::make_unique<std::bitset<65536>>()) {
-        m_inFlight->reset();
-    }
+    TransactionIdAllocator() : m_used(std::make_unique<std::bitset<65536>>()) {}
 
-    // V1.2：禁用拷贝/移动，避免 8KB 逐位拷贝；也可通过 unique_ptr 默认实现移动
+    // 禁用拷贝/移动（或经 unique_ptr 默认实现移动），避免 8KB 逐位拷贝
     TransactionIdAllocator(const TransactionIdAllocator&) = delete;
     TransactionIdAllocator& operator=(const TransactionIdAllocator&) = delete;
     TransactionIdAllocator(TransactionIdAllocator&&) = default;
     TransactionIdAllocator& operator=(TransactionIdAllocator&&) = default;
 
-    uint16_t next() {
-        for (int i = 0; i < 65535; ++i) {
-            uint16_t id = m_next.fetch_add(1, std::memory_order_relaxed);
-            if (id == INVALID_ID) id = m_next.fetch_add(1, std::memory_order_relaxed);
-            if (!m_inFlight->test(id)) return id;
+    // 分配 [1,65535] 中最低空闲 ID 并原子占用；耗尽返回 INVALID_ID。
+    uint16_t allocate() noexcept {
+        for (uint32_t id = 1; id <= 65535; ++id) {   // uint32_t 防 16-bit 回绕死循环
+            if (!m_used->test(id)) { m_used->set(id); return static_cast<uint16_t>(id); }
         }
-        return INVALID_ID;   // 极端: 所有 ID 在途，调用方记严重错误
+        return INVALID_ID;
     }
 
-    void markInFlight(uint16_t id)   { m_inFlight->set(id); }
-    void unmark(uint16_t id)         { m_inFlight->reset(id); }
-    bool isInFlight(uint16_t id) const { return m_inFlight->test(id); }
-    void clearInFlight()             { m_inFlight->reset(); }
-    void reset() noexcept            { m_next.store(1, std::memory_order_relaxed); m_inFlight->reset(); }
+    void release(uint16_t id) noexcept {          // 释放 ID 使其可复用（0 忽略）
+        if (id != INVALID_ID) m_used->reset(id);
+    }
+
+    void clearInFlight() noexcept { m_used->reset(); }  // 断链/重连时清空在途
+
+    bool isAllocated(uint16_t id) const noexcept {      // 野响应校验用
+        return id != INVALID_ID && m_used->test(id);
+    }
 
 private:
-    std::atomic<uint16_t> m_next{1};                          // uint16_t 自增天然模 65536 回绕
-    std::unique_ptr<std::bitset<65536>> m_inFlight;           // 8KB 位图在堆上，移动仅转移指针
+    std::unique_ptr<std::bitset<65536>> m_used;   // 8KB 位图置于堆上；0=空闲 1=已分配
 };
 ```
 
+> **配对路由（V1.5 新增）**：`ModbusEngine` 在 `writeRequest`（TCP）时按分配的 tid 登记在途配对表 `tid → (linkId, slaveAddress)`；`onBytesReceived` 解析响应后按 `resp.transactionId` 精确命中配对表，路由回对应 `linkId` 后移除登记并 `release(tid)`。未命中视为**野响应**（延迟旧响应/串扰），丢弃并 `emit frameError(linkId=0, Spurious)`，不向上投递。`connectionChanged(false)` 断链时清空配对表 + 位图，防 16-bit 回绕错配。
+
 | 触发场景 | 清理动作 | 上层影响 |
 |---------|---------|---------|
-| 请求超时 | `txIdAllocator.unmark(tid)` + 上报失败 | 该从站超时计数++，触发熔断 |
-| 收到响应 | `txIdAllocator.unmark(tid)` + 交付 | 正常 |
-| TCP disconnected / 重连前 | `txIdAllocator.clearInFlight()` + 遍历上报失败 | 在途从站按超时，链路离线 |
-| `close()` | `txIdAllocator.clearInFlight()` + `txIdAllocator.reset()` | 资源释放，避免悬空 |
+| 请求超时 | `txIdAllocator.release(tid)` + 从配对表移除 + 上报失败 | 该从站超时计数++，触发熔断 |
+| 收到响应 | 按 tid 命中配对表 → `release(tid)` + 移除配对 → 路由交付 | 正常；未命中视为野响应（Spurious）丢弃 |
+| TCP disconnected / 重连前 | `txIdAllocator.clearInFlight()` + 清空配对表 + 遍历上报失败 | 在途从站按超时，链路离线 |
+| `close()` | `txIdAllocator.clearInFlight()` + 清空配对表 | 资源释放，避免悬空 |
 
 ### 4.4 `PointTable` 点表映射与字节序转换（ENS-LLD-203）
 

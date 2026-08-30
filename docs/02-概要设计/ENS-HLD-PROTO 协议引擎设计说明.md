@@ -542,43 +542,49 @@ sequenceDiagram
 #pragma once
 #include <cstdint>
 #include <atomic>
+#include <cstdint>
 #include <bitset>
-#include <optional>
+#include <memory>
 
 namespace ens::protocol {
 
 // 16-bit Transaction ID 占用位图: O(1) 查询 / 占用, 无哈希冲突, 无动态分配
+// V1.5.4: 接口统一为 allocate()/release()/clearInFlight()/isAllocated()（对齐 DevGuide §2A
+//         与 ENS-LLD-100 §4.3.6 V1.5 / 实现）。废弃 V1.5.3 的 next(外部位图)+InFlightIdMap
+//         两步式: fetch_add 回绕存在撞上在途 ID 的窗口, 且"取号+登记"两步之间有空窗;
+//         allocate() 位图扫描最低空闲位并原子占用, 语义更优。InFlightIdMap 并入本类。
 class TransactionIdAllocator {
 public:
     static constexpr uint16_t INVALID_ID = 0;  // 0 保留为"无效/特殊"ID, 分配从 1 开始
 
-    TransactionIdAllocator() : m_next(1) {}
+    TransactionIdAllocator() : m_used(std::make_unique<std::bitset<65536>>()) {}
 
-    // 返回一个当前不在 inFlight 位图中的 16-bit Transaction ID
-    uint16_t next(const std::bitset<65536>& inFlight) {
-        for (int i = 0; i < 65535; ++i) {
-            uint16_t id = m_next.fetch_add(1, std::memory_order_relaxed);
-            if (id == INVALID_ID) id = m_next.fetch_add(1, std::memory_order_relaxed);
-            if (!inFlight.test(id)) return id;
+    // 禁用拷贝/移动（或经 unique_ptr 默认实现移动）, 避免 8 KiB 逐位拷贝
+    TransactionIdAllocator(const TransactionIdAllocator&) = delete;
+    TransactionIdAllocator& operator=(const TransactionIdAllocator&) = delete;
+    TransactionIdAllocator(TransactionIdAllocator&&) = default;
+    TransactionIdAllocator& operator=(TransactionIdAllocator&&) = default;
+
+    // 分配 [1,65535] 中最低空闲 ID 并原子占用; 耗尽返回 INVALID_ID
+    uint16_t allocate() noexcept {
+        for (uint32_t id = 1; id <= 65535; ++id) {   // uint32_t 防 16-bit 回绕死循环
+            if (!m_used->test(id)) { m_used->set(id); return static_cast<uint16_t>(id); }
         }
-        return INVALID_ID;  // 极端: 所有 ID 在途, 调用方应记录严重错误
+        return INVALID_ID;
     }
 
-    void reset() noexcept { m_next.store(1, std::memory_order_relaxed); }
+    void release(uint16_t id) noexcept {          // 释放 ID 使其可复用（0 忽略）
+        if (id != INVALID_ID) m_used->reset(id);
+    }
+
+    void clearInFlight() noexcept { m_used->reset(); }  // 断链/重连时清空在途
+
+    bool isAllocated(uint16_t id) const noexcept {      // 响应路由二次校验用
+        return id != INVALID_ID && m_used->test(id);
+    }
 
 private:
-    std::atomic<uint16_t> m_next;  // uint16_t 自增天然模 65536 回绕
-};
-
-// InFlight 位图容器: 提供原子性 mark/unmark 与全部清除
-class InFlightIdMap {
-    std::bitset<65536> m_bits;  // 65536 bits = 8 KiB, 固定开销
-public:
-    bool     contains(uint16_t id) const noexcept { return m_bits.test(id); }
-    void     mark(uint16_t id) noexcept { m_bits.set(id); }
-    void     unmark(uint16_t id) noexcept { m_bits.reset(id); }
-    void     clear() noexcept { m_bits.reset(); }
-    const std::bitset<65536>& bitset() const noexcept { return m_bits; }
+    std::unique_ptr<std::bitset<65536>> m_used;   // 8 KiB 位图置于堆上; 0=空闲 1=已分配
 };
 
 }  // namespace ens::protocol
@@ -588,10 +594,10 @@ public:
 
 | 触发场景 | 清理动作 | 上层影响 |
 |---------|---------|---------|
-| 请求超时 | `inflightBits.unmark(tid)` + 清空请求上下文，`onResponseReceived(sid, false)` | 该从站超时计数++，触发熔断 |
-| 收到响应 | `inflightBits.unmark(tid)` + 清空请求上下文 | 正常交付 |
-| TCP disconnected / 重连前 | `inflightBits.clear()` + 遍历所有有效项 `onResponseReceived(sid, false)` | 所有在途从站按超时处理，链路离线 |
-| `close()` 被调用 | 同上清空 + `txIdAllocator.reset()` | 资源释放，避免悬空回调 |
+| 请求超时 | `txIdAllocator.release(tid)` + 清空请求上下文，`onResponseReceived(sid, false)` | 该从站超时计数++，触发熔断 |
+| 收到响应 | 按 tid 命中配对 → `release(tid)` + 清空请求上下文，路由交付 | 正常；未命中视为野响应丢弃 |
+| TCP disconnected / 重连前 | `txIdAllocator.clearInFlight()` + 遍历所有有效项 `onResponseReceived(sid, false)` | 所有在途从站按超时处理，链路离线 |
+| `close()` 被调用 | 同上清空（`clearInFlight()`） | 资源释放，避免悬空回调 |
 
 **关键原则**：`inFlight` 表的生命周期与 **TCP 连接** 绑定，而不是与 `PollScheduler` 绑定。连接断开意味着所有在途请求语义上已失败，必须清空，不能等它们"自然超时"。
 
@@ -834,12 +840,11 @@ void PollScheduler::enqueue(const PollTask& task) {
 算法: scheduleTcpLink(link):
     for slave in link.activeSlaves:
         if slave 当前无在途请求 && 到达其轮询周期:
-            tid = link.txIdAllocator.next(link.inflightBits.bitset())  // O(1) 跳过在途 ID
+            tid = link.txIdAllocator.allocate()   // O(1) 位图扫描最低空闲 ID 并原子占用
             if tid == INVALID: continue          // ID 池耗尽, 记录严重错误
             channel.write(buildTcpFrame(tid, slave.req))
-            link.inflightBits.mark(tid)
-            link.inflightReqs[tid] = {slave, deadline=now()+timeout}
-    // 定时器扫描在途请求, 超时 → unmark(tid); onResponseReceived(sid, false)
+            link.inflightReqs[tid] = {slave, deadline=now()+timeout}   // 登记配对
+    // 定时器扫描在途请求, 超时 → release(tid); onResponseReceived(sid, false)
 ```
 
 ### 4.6 容错处理矩阵
@@ -1401,7 +1406,7 @@ private:
 }  // namespace ens::protocol
 ```
 
-> `TransactionIdAllocator` / `InFlightIdMap` 头文件见 §3.6；`ModbusStreamAccumulator` 头文件见 CADS §2.6.6（固定环形字节数组 + 零动态分配）。
+> `TransactionIdAllocator` 头文件见 §3.6；`ModbusStreamAccumulator` 头文件见 CADS §2.6.6（固定环形字节数组 + 零动态分配）。
 
 ### 7.6 ChannelStats.h —— 权威原子统计 + 质量等级
 
