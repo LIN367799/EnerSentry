@@ -33,6 +33,7 @@
 namespace ens::sim {
 
 class PointGenerator;
+class FaultInjector;  // B8
 
 class ModbusSlaveEmulator {
 public:
@@ -41,6 +42,10 @@ public:
 
     ModbusSlaveEmulator(const ModbusSlaveEmulator&) = delete;
     ModbusSlaveEmulator& operator=(const ModbusSlaveEmulator&) = delete;
+
+    /// B8:注入 FaultInjector（IoC,非拥有）。start() 时透传到各 transport。
+    /// 调用方需保证 fi 生命周期 ≥ emulator 生命周期。
+    void setFaultInjector(FaultInjector* fi) noexcept { m_fi = fi; }
 
     /// 启动:从 cfg.tcp/rtu.enabled 决定 open 哪些 transport;
     /// 装 unitId-aware handler 让 PDU 进 dispatchBySlaveId 路由到正确 SlaveRegset;
@@ -78,6 +83,7 @@ private:
     bool                                          m_tcpEnabled = false;
     bool                                          m_rtuEnabled = false;
     mutable std::mutex                            m_mtx;       // mutable — const methods (activeTransportCount/findSlave) 仍需锁
+    FaultInjector*                               m_fi = nullptr;  // B8:非拥有,setFaultInjector 注入
 };
 
 }  // namespace ens::sim

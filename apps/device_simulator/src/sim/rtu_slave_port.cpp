@@ -109,15 +109,54 @@ void RtuSlavePort::processFrame(const QByteArray& frame) noexcept {
         std::vector<uint8_t>(pdu, pdu + pduLen));
     if (respPdu.empty() || !m_port) return;
 
+    // B8:linkEffect 判定（一次性读取,后续 corruptCrc/delayMs 也用）
+    FaultEffect eff{};  // 默认 inactive
+    if (m_fi != nullptr) {
+        eff = m_fi->linkEffect(unitId);
+        if (eff.active) {
+            if (eff.dropLink) return;                 // 模拟不响应（FR-CTRL-07 断链清锁路径）
+            if (eff.corruptByte && respPdu.size() > 3) {
+                respPdu[3] ^= 0xFF;                  // LLD-SIM §4.5.4 TCP 等价破坏
+            }
+        }
+    }
+
     // 响应帧 = addr + respPdu + crc（低字节在前）
     std::vector<uint8_t> resp;
     resp.reserve(1 + respPdu.size() + 2);
-    resp.push_back(p[0]);                             // 从站地址原样回
+    resp.push_back(p[0]);
     resp.insert(resp.end(), respPdu.begin(), respPdu.end());
     const uint16_t crc = ens::core::crc16_modbus(resp.data(), resp.size());
     resp.push_back(static_cast<uint8_t>(crc & 0xFF));
     resp.push_back(static_cast<uint8_t>(crc >> 8));
+
+    if (eff.active) {
+        if (eff.corruptCrc) {
+            // LLD-SIM §4.5.4:翻 CRC 低字节 → crc16ModbusVerify 必然失败
+            resp[resp.size() - 2] ^= 0xFF;
+        }
+        if (eff.delayMs > 0) {
+            // 异步发送:存 m_pendingResp,到时由 onSendDelayTimeout 写出
+            m_pendingResp = QByteArray(reinterpret_cast<const char*>(resp.data()),
+                                       static_cast<qsizetype>(resp.size()));
+            if (m_sendDelayTimer == nullptr) {
+                m_sendDelayTimer = new QTimer(this);
+                m_sendDelayTimer->setSingleShot(true);
+                connect(m_sendDelayTimer, &QTimer::timeout,
+                        this, &RtuSlavePort::onSendDelayTimeout);
+            }
+            m_sendDelayTimer->start(eff.delayMs);
+            return;
+        }
+    }
+
     m_port->write(reinterpret_cast<const char*>(resp.data()), static_cast<qint64>(resp.size()));
+}
+
+void RtuSlavePort::onSendDelayTimeout() {
+    if (m_port == nullptr || m_pendingResp.isEmpty()) return;
+    m_port->write(m_pendingResp);
+    m_pendingResp.clear();
 }
 
 }  // namespace ens::sim

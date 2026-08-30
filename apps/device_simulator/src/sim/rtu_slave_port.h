@@ -7,6 +7,7 @@
 
 #include "sim/islave_transport.h"
 #include "sim/modbus_slave.h"
+#include "sim/FaultInjector.h"  // B8
 
 #include <QByteArray>
 #include <QObject>
@@ -30,12 +31,15 @@ public:
     void setRequestHandler(RequestHandler cb) override;
     // B6:ModbusSlaveEmulator 通过 unitId(RTU 首字节 = slaveAddress) 路由
     void setRequestHandler(RequestHandlerWithUnit cb) noexcept override;
+    // B8:注入 FaultInjector;processFrame 内查 linkEffect 决定 dropLink/corruptCrc/corruptByte/delayMs
+    void setFaultInjector(FaultInjector* fi) noexcept override { m_fi = fi; }
 
     SlaveRegs& regs() noexcept { return m_regs; }
 
 private slots:
     void onReadyRead();
-    void onFrameTimeout();                            // 帧间静默到期 → 缓冲视为完整帧
+    void onFrameTimeout();
+    void onSendDelayTimeout();                            // 帧间静默到期 → 缓冲视为完整帧
 
 private:
     void processFrame(const QByteArray& frame) noexcept;
@@ -45,13 +49,16 @@ private:
 
     QSerialPort* m_port = nullptr;
     QTimer*      m_frameTimer = nullptr;
+    QTimer*      m_sendDelayTimer = nullptr;
+    QByteArray   m_pendingResp;
     QByteArray   m_rxBuf;
     std::string  m_portName;
     uint32_t     m_baud = 115200;
     int          m_interFrameMs = 2;                  // 帧间静默定时（115200 → 1750µs，取整 2ms）
     SlaveRegs    m_regs;
     RequestHandler         m_handler;
-    RequestHandlerWithUnit m_handlerWithUnit;        // B6:unitId 路由版本
+    RequestHandlerWithUnit m_handlerWithUnit;
+    FaultInjector*         m_fi = nullptr;        // B6:unitId 路由版本
 };
 
 }  // namespace ens::sim

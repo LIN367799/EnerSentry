@@ -250,3 +250,125 @@ TEST_CASE("fault_injector: PointGenerator integration: OverTemp overrides m_work
     const auto& work = gen.workOf(1);
     REQUIRE(work.getHolding(4096) == 650);
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 7) linkEffect：B8 IO 层链路级故障查询（dropLink / corruptCrc / delayMs）
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("fault_injector: linkEffect returns SLAVE-scope flags (dropLink/delayMs) for IO layer",
+          "[master][sim][fault_injector][linkeffect][io][tier2]") {
+    FaultInjector fi;
+
+    // 触发 CommLoss scope=SLAVE slave=3,不应有 raw 值,只产 IO 标志
+    FaultRequest req;
+    req.spec.type      = FaultType::CommLoss;
+    req.spec.scope     = Scope::SLAVE;
+    req.spec.slave     = 3;
+    req.spec.targetValue = 1.0f;
+    fi.trigger(req);
+
+    // linkEffect(slave=3) 应返回 active=true + dropLink=true
+    const FaultEffect ef = fi.linkEffect(3);
+    REQUIRE(ef.active);
+    REQUIRE(ef.dropLink);
+    REQUIRE(ef.type == FaultType::CommLoss);
+
+    // 链路 effect 对 POINT scope 注入不命中（POINT 写精确 key,不在 ALL_KEY 通配上）
+    FaultRequest req2;
+    req2.spec.type      = FaultType::CrcError;
+    req2.spec.scope     = Scope::POINT;
+    req2.spec.slave     = 5;
+    req2.spec.reg       = 100;
+    fi.trigger(req2);
+    // linkEffect(5) 应返回 POINT scope CrcError 的 effect(IO 层忽略 reg)
+    const FaultEffect ef5 = fi.linkEffect(5);
+    REQUIRE(ef5.active);
+    REQUIRE(ef5.corruptCrc);
+    REQUIRE(ef5.corruptByte);
+    REQUIRE(ef5.type == FaultType::CrcError);
+    REQUIRE_FALSE(ef5.dropLink);   // 不是 CommLoss
+
+    // Timeout 注入应返回 delayMs
+    FaultRequest req3;
+    req3.spec.type      = FaultType::Timeout;
+    req3.spec.scope     = Scope::POINT;
+    req3.spec.slave     = 7;
+    req3.spec.reg       = 200;
+    req3.spec.corruptMs = 500;
+    fi.trigger(req3);
+    const FaultEffect ef7 = fi.linkEffect(7);
+    REQUIRE(ef7.active);
+    REQUIRE(ef7.delayMs == 500);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 8) PointGenerator 告警字置位：OverTemp → bit0（B7 尾巴,B8 落地）
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("fault_injector: PointGenerator sets alarmWord bit0 on OverTemp (B8 deliverable)",
+          "[master][sim][fault_injector][alarmword][overtemp][tier2]") {
+    auto pt = makeLoadedTable();
+    SimConfig cfg;
+    cfg.tickMs = 100;
+    cfg.seed   = 0;
+    PointGenerator gen(cfg, pt);
+    FaultInjector fi;
+    gen.attachFi(&fi);
+
+    // OverTemp on slave 1 (Rack-01)
+    FaultRequest req;
+    req.spec.type        = FaultType::OverTemp;
+    req.spec.scope       = Scope::POINT;
+    req.spec.slave       = 1;
+    req.spec.reg         = 4096;       // Rack-01_MaxTemp
+    req.spec.targetValue = 65.0f;
+    fi.trigger(req);
+
+    gen.generateTick();
+
+    const auto& work = gen.workOf(1);
+    // bit0 = OverTemp
+    REQUIRE((work.alarmWord & 0x01u) != 0);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 9) PointGenerator 告警字置位：CellVoltage value>0 → bit1,value<0 → bit2
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("fault_injector: PointGenerator sets alarmWord bit1/bit2 on CellVoltage (B8 deliverable)",
+          "[master][sim][fault_injector][alarmword][cellvoltage][tier2]") {
+    auto pt = makeLoadedTable();
+    SimConfig cfg;
+    cfg.tickMs = 100;
+    cfg.seed   = 0;
+
+    // 第一次 generateTick:OverVolt
+    {
+        PointGenerator gen(cfg, pt);
+        FaultInjector fi;
+        gen.attachFi(&fi);
+        FaultRequest req;
+        req.spec.type        = FaultType::CellVoltage;
+        req.spec.scope       = Scope::POINT;
+        req.spec.slave       = 1;
+        req.spec.reg         = 4096;
+        req.spec.targetValue = 4.5f;  // 过压
+        fi.trigger(req);
+        gen.generateTick();
+        const auto& work = gen.workOf(1);
+        REQUIRE((work.alarmWord & 0x02u) != 0);  // bit1 = OverVolt
+    }
+    // 第二次 generateTick:UnderVolt
+    {
+        PointGenerator gen(cfg, pt);
+        FaultInjector fi;
+        gen.attachFi(&fi);
+        FaultRequest req;
+        req.spec.type        = FaultType::CellVoltage;
+        req.spec.scope       = Scope::POINT;
+        req.spec.slave       = 1;
+        req.spec.reg         = 4096;
+        req.spec.targetValue = -0.5f;  // 欠压
+        fi.trigger(req);
+        gen.generateTick();
+        const auto& work = gen.workOf(1);
+        REQUIRE((work.alarmWord & 0x04u) != 0);  // bit2 = UnderVolt
+    }
+}

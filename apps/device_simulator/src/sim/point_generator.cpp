@@ -128,6 +128,12 @@ void PointGenerator::generateTick() {
                 if (!eff.active) continue;
                 // dropLink 标志由 B8 IO 层消费,此处不写
                 if (eff.dropLink) continue;
+                // B8 告警字置位:OverTemp→bit0,CellVoltage(value>0 过压→bit1 / value<0 欠压→bit2)
+                if (eff.type == FaultType::OverTemp) {
+                    m_work[slave].alarmWord |= (uint16_t(1) << 0);
+                } else if (eff.type == FaultType::CellVoltage) {
+                    m_work[slave].alarmWord |= (uint16_t(1) << (eff.value > 0.0f ? 1 : 2));
+                }
                 // 工程值 → raw:raw = (eng - offset) / scale,clamp uint16
                 const float scale = (p.scaleFactor != 0.0f) ? p.scaleFactor : 1.0f;
                 const float rawF  = (eff.value - p.offset) / scale;

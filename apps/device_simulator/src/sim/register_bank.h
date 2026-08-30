@@ -41,6 +41,12 @@ struct SlaveRegset {
     std::vector<uint8_t>  coils;      // [registerAddr/8]  Coil              0x
     std::vector<uint8_t>  discretes;  // [registerAddr/8]  DiscreteInput     1x
 
+    // B8：簇级告警字。PointGenerator 注入 OverTemp/CellVoltage 时置位;IO 编码时
+    // 按 base+0x08（BMS 簇级寄存器 0x00..0x0E 中 alarmWord 槽位,SIM-IMP §3.1）写入 holding。
+    // bit 定义（B8 简化为本地定义,联调时与主程序 AlarmEngine 对齐）：
+    //   bit0 = OverTemp    bit1 = OverVoltage    bit2 = UnderVoltage
+    uint16_t alarmWord = 0;
+
     // ── HoldingRegisters ──
     uint16_t getHolding(uint16_t reg) const noexcept {
         return (reg < holding.size()) ? holding[reg] : uint16_t{0};

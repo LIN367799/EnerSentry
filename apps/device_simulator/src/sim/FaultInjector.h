@@ -174,6 +174,12 @@ public:
     /// 热路径：PointGenerator 每 tick 每 (slave,reg) 调用一次。无锁读。
     FaultEffect resolveOverride(uint8_t slave, uint16_t reg) const noexcept;
 
+    /// IO 层专用（B8）：查 SLAVE/ALL/POINT scope 的链路级故障效果（dropLink / delayMs / corruptCrc /
+    /// corruptByte）。约定忽略 reg（IO 层不区分 reg）。实现走 sessions 遍历（不走 m_tablePtr,
+    /// 因为 POINT scope 写的是精确 key,ALL_KEY 通配只对 SLAVE/ALL 命中）。
+    /// IO 线程在 invokeHandler 完成后调用一次,根据 effect 决定 corrupt / 丢 / 延迟。
+    FaultEffect linkEffect(uint8_t slave) const noexcept;
+
     /// 触发新故障 session。返回 handle；INVALID_FAULT_HANDLE 表示失败（如 ID 已耗尽）
     FaultHandle trigger(const FaultRequest& req) noexcept;
 

@@ -115,6 +115,9 @@ void ModbusSlaveEmulator::installDispatchHandler() noexcept {
         } else if (auto* rtu = dynamic_cast<RtuSlavePort*>(t.get())) {
             rtu->setRequestHandler(cb);
         }
+        // B8:透传 FaultInjector 到 transport,IO 线程在 invokeHandler 完成后
+        // 查 linkEffect(slave) 决定 dropLink / delayMs / corruptCrc / corruptByte
+        t->setFaultInjector(m_fi);
     }
 }
 

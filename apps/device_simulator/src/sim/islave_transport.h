@@ -6,6 +6,11 @@
 // B6 增量补丁：RequestHandlerWithUnit 增加 unitId 参数（MBAP Unit ID / RTU 首字节），
 // 让 ModbusSlaveEmulator 把请求路由到对应的 SlaveRegset；原 RequestHandler 保留作为
 // 单元 ID 已经无关的"伪从站"使用路径（B3 测试代码兼容）。
+//
+// B8 增量补丁：setFaultInjector 让 IO 层在 invokeHandler 完成后,编码响应前查
+// FaultInjector::linkEffect(slave) 决定 corruptCrc / corruptByte / dropLink / delayMs。
+// 基类默认空实现,ModbusTcpServer 与 RtuSlavePort 子类 override。非拥有指针,
+// 由 ModbusSlaveEmulator.start() 注入。
 #pragma once
 
 #include <cstdint>
@@ -14,6 +19,8 @@
 #include <vector>
 
 namespace ens::sim {
+
+class FaultInjector;  // 前向声明,避免头文件循环依赖
 
 class ISlaveTransport {
 public:
@@ -29,6 +36,11 @@ public:
     virtual void setRequestHandler(RequestHandler cb) = 0;
     // B6 新增：ModbusSlaveEmulator 通过 unitId 路由到不同 SlaveRegset
     virtual void setRequestHandler(RequestHandlerWithUnit cb) noexcept { (void)cb; }   // 默认空操作(子类可 override)
+
+    // B8 新增：注入 FaultInjector（不拥有）。默认空实现：测试或旧 transport 不感知 fault 注入
+    // 时,等同于无故障。子类的 override 在 invokeHandler 完成后查 linkEffect 决定 dropLink /
+    // delayMs / corruptCrc / corruptByte。
+    virtual void setFaultInjector(FaultInjector* /*fi*/) noexcept {}
 };
 
 }  // namespace ens::sim

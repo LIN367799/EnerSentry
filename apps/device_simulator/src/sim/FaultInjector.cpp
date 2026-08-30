@@ -149,16 +149,49 @@ FaultEffect FaultInjector::resolveOverride(uint8_t slave, uint16_t reg) const no
     std::shared_lock<std::shared_mutex> lk(m_sessionsMtx);
     if (!m_tablePtr) return FaultEffect{};
 
-    // 第一遍：直接查 table（精确 key）
     FaultEffect ef = m_tablePtr->resolve(slave, reg);
 
-    // 第二遍：找覆盖这个 (slave,reg) 的 session，校正 value（RECOVERING 期渐变）
     if (ef.active) {
         for (const auto& s : m_sessions) {
             if (s.covers(slave, reg)) {
                 ef.value = s.currentValue();
                 break;
             }
+        }
+    }
+    return ef;
+}
+
+FaultEffect FaultInjector::linkEffect(uint8_t slave) const noexcept {
+    // B8 IO 层链路级故障查询：走 sessions 遍历(不走 m_tablePtr,因为 POINT scope 写的是
+    // 精确 key (slave<<16|reg),m_tablePtr 的 ALL_KEY 通配只对 SLAVE/ALL scope 命中)。
+    // 匹配规则:scope=POINT 且 slave 匹配;SLAVE 且 slave 匹配;ALL 一律匹配
+    // (IO 层不区分 reg,所以 POINT scope 的 IO 查询也只看 slave)。
+    // 多 session 同 slave 合并(同 session 的所有 effect 标志全部应用)。
+    std::shared_lock<std::shared_mutex> lk(m_sessionsMtx);
+    FaultEffect ef{};
+    for (const auto& s : m_sessions) {
+        const auto st = s.state();
+        if (st != FaultState::ACTIVE && st != FaultState::RECOVERING) continue;
+        const auto& spec = s.spec();
+        bool match = false;
+        switch (spec.scope) {
+            case Scope::POINT: match = (spec.slave == slave); break;
+            case Scope::SLAVE: match = (spec.slave == slave); break;
+            case Scope::ALL:   match = true; break;
+        }
+        if (!match) continue;
+        ef.active = true;
+        ef.type   = spec.type;
+        if (spec.type == FaultType::CommLoss) {
+            ef.dropLink = true;
+        }
+        if (spec.type == FaultType::CrcError) {
+            ef.corruptCrc  = true;
+            ef.corruptByte = true;
+        }
+        if (spec.type == FaultType::Timeout) {
+            ef.delayMs = spec.corruptMs;
         }
     }
     return ef;

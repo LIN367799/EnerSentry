@@ -10,6 +10,7 @@
 
 #include "sim/islave_transport.h"
 #include "sim/modbus_slave.h"
+#include "sim/FaultInjector.h"  // B8
 
 #include <atomic>
 #include <cstdint>
@@ -31,8 +32,10 @@ public:
     void setRequestHandler(RequestHandler cb) override;
     // B6:ModbusSlaveEmulator 通过 unitId(MBAP) 路由到不同 SlaveRegset
     void setRequestHandler(RequestHandlerWithUnit cb) noexcept override;
+    // B8:注入 FaultInjector;clientLoop 内 invokeHandler 后查 linkEffect
+    void setFaultInjector(FaultInjector* fi) noexcept override { m_fi = fi; }
 
-    // 实际监听端口（open 成功后；bind 0 时由 OS 分配，测试用）
+    // 实际监听端口（open 成功后;bind 0 时由 OS 分配,测试用）
     uint16_t actualPort() const noexcept { return m_port; }
     SlaveRegs& regs() noexcept { return m_regs; }
 
@@ -56,6 +59,7 @@ private:
     SlaveRegs   m_regs;
     RequestHandler         m_handler;
     RequestHandlerWithUnit m_handlerWithUnit;        // B6:unitId 路由版本(若设置则优先)
+    FaultInjector*         m_fi = nullptr;           // B8:非拥有,setFaultInjector 注入
 };
 
 }  // namespace ens::sim

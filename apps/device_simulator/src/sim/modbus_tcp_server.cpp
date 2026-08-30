@@ -3,11 +3,14 @@
 #include "sim/modbus_tcp_server.h"
 
 #include "core/mbap.h"
+#include "sim/FaultInjector.h"
 
 #include <array>
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <thread>
 #include <utility>
 
 #ifdef _WIN32
@@ -225,6 +228,31 @@ void ModbusTcpServer::clientLoop(int clientFd) noexcept {
         respPdu = invokeHandler(hdr.unitId,
                                 std::vector<uint8_t>(pdu.data(), pdu.data() + pduLen));
         if (respPdu.empty()) break;                 // 非法请求 → 丢弃连接
+
+        // B8:linkEffect 判定 — 注入 dropLink / delayMs / corruptByte(TCP)
+        // 消费 FaultEffect 标志位（IO 层职责,HLD-SIM §4.5.5）
+        if (m_fi != nullptr) {
+            const FaultEffect eff = m_fi->linkEffect(hdr.unitId);
+            if (eff.active) {
+                if (eff.dropLink) {
+                    // 模拟"不响应"：直接断开该 client(主程序 PollScheduler 走 timeout →
+                    // 重试 → 熔断路径,验证 FR-CTRL-07 断链清锁)
+                    break;
+                }
+                if (eff.delayMs > 0) {
+                    // B8 简化:同步 sleep 阻塞 clientLoop(单连接测试 OK,
+                    // 生产可换 std::async + fd-validity 原子检查)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(eff.delayMs));
+                }
+                if (eff.corruptByte && respPdu.size() > 3) {
+                    // LLD-SIM §4.5.4:翻 PDU 中第一个数据字节
+                    // PDU 布局 fc + addrHi + addrLo + valHi + valLo (FC06 写回显)
+                    // pdu[3] = valHi 字节
+                    respPdu[3] ^= 0xFF;
+                }
+                // corruptCrc:TCP 无 CRC,跳过(RTU 关心)
+            }
+        }
 
         core::MbapHeader resp;
         resp.transactionId = hdr.transactionId;     // 透传（LLD-SIM §3.1）
