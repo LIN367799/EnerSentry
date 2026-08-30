@@ -19,6 +19,9 @@ add_executable(ens_tests
     unit/test_poll_scheduler.cpp
     unit/test_register_bank.cpp
     unit/test_sample.cpp
+    unit/test_ringbuffer.cpp
+    unit/test_l1snapshot.cpp
+    unit/test_databus.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -44,7 +47,7 @@ target_include_directories(ens_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ../apps/device_simulator/src
     ../apps/ens_app/src)
-target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol Catch2::Catch2)
+target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub Catch2::Catch2)
 # B3 起原生 socket（winsock2）：MSVC 下需显式链 ws2_32（Qt5::Network 也带，双保险）
 if(WIN32)
     target_link_libraries(ens_tests PRIVATE ws2_32)

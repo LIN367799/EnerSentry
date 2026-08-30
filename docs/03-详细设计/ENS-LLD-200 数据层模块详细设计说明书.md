@@ -1,7 +1,8 @@
 # ENS-LLD-300 《数据中枢与分级存储模块（DataHub Layer - L3）详细设计说明书》
 
-> **文档编号**：ENS-LLD-300 ｜ **版本**：V1.1 ｜ **所属架构层级**：L3（数据中枢层）
+> **文档编号**：ENS-LLD-300 ｜ **版本**：V1.2 ｜ **所属架构层级**：L3（数据中枢层）
 > **修订记录**：V1.1 按评审意见细化了 L1SnapshotStore 热路径数组寻址、RingBuffer 二分范围提取、AttachGuard 条件变量等待。  
+> **修订记录（V1.2）**：Phase 3 切片 7 落地（4.1.1 RingBuffer / 4.1.2 L1SnapshotStore / 4.1.3 DataBus 已实现，ctest 167/167）。① §3.2 RingBuffer 模板参数 `Capacity` 改运行时构造参数（支持 §3.5.2 NFR-PERF-05 每测点分级容量）；`m_publishedPos` 语义定为"已发布数据量 counter"（推 N 次后 = N，可读区间 `[cursor, published)` 半开——修正 V1.1 草案 position 语义下 readRecent/extractRange 公式不自洽）；移除 `std::atomic<T>::is_always_lock_free` 静态断言（MSVC 14.x constexpr 误报，对齐 §3.1 Sample 决策）。② §3.4 L1SnapshotStore 稀疏回退由 QHash 改 `std::unordered_map`（Qt 5 `QHash::insert` 对 move-only value 仍走拷贝路径）。③ §6 DataBus 接口对齐实现：`IDataBusSubscriber` 接口 + 自增 `Subscription` 句柄 + `subscribeWildcard` + broadcast 两步走（详见 §6 V1.2 落地修订）。  
 > **对应 CMake Target**：`ens::datahub`（STATIC，热路径，参考 HLD §2.6.5 / ADR-12）  
 > **核心负责类**：`RingBuffer<T>`、`L1SnapshotStore`、`BlackBoxManager`、`CriticalSwapFile`、`PlatformMMap`、`L2HistoryStore`、`SQLiteDataAccess`、`DownSampler`、`DataBus`、`AttachGuard`  
 > **关联 ADR**：ADR-08 / ADR-09 / ADR-14 / ADR-15 / ADR-17 / ADR-18 / ADR-19 / ADR-20 / ADR-21（HLD 级）；ADR-LLD-01~ADR-LLD-04（本册新增）  
@@ -249,6 +250,12 @@ static_assert(std::atomic<Sample>::is_always_lock_free,
 ### 3.2 无锁环形缓冲区模板 `RingBuffer<T>`
 
 > **来源**：总纲 §6.1；ENS-CONC-001 §2.3。
+>
+> **V1.2 落地修订（Phase 3 4.1.1 已实现，见 `apps/ens_app/src/datahub/RingBuffer.h`）**：
+> ① 模板参数 `Capacity` 改为**运行时构造参数**（`RingBuffer(size_t capacity, ...)`，构造函数断言 2 幂）——原草案非类型模板参数使所有实例同容量，无法满足 §3.5.2 NFR-PERF-05 分级预算（100ms/1h→65536、1s/30min→2048 等逐测点不同）；
+> ② `m_publishedPos` 语义定为 **"已发布数据量 counter"**（推 N 次后 = N；`readRecent` 可读区间 `[cursor, published)` 半开、`extractRange` 遍历 `[0, published)`）——V1.1 草案按"0-based 最后位置"解读时，`readRecent` 的 `published-cursor` 与 `extractRange` 的 `[oldestLogical, published]` 公式不自洽（漏 pos 0）；counter 语义下全套公式自洽且初始值 `published=0` 天然表示"无数据"；
+> ③ 移除 `static_assert(std::atomic<T>::is_always_lock_free)`——MSVC 14.x constexpr 对 Sample 误报 false（见 §3.1 "MSVC 14.x constexpr 保守补充"），改由调用方 Tier 1 运行期保证（`test_sample.cpp`）；
+> ④ `extractRange` 落地为 published 段线性扫描（V1.1 草案的 O(log N) 二分仅当 ts"未覆盖一圈"单调递增才成立，为正确性取线性扫描，命中即停）。
 
 ```cpp
 // datahub/RingBuffer.h
@@ -407,6 +414,11 @@ T4: m_publishedPos.store(pos, release)
 ### 3.4 L1 快照库 `L1SnapshotStore`
 
 > **热路径优化**：采集线程每次 `write` 都会发生一次 `QHash` 查找。在 EnerSentry 点表 ID 连续或可预分配的前提下，用固定大小 Flat Array（`std::vector<RingBuffer<Sample>*>`）替代 `QHash`，以 `pointId - minId` 直接下标寻址，消除哈希计算与指针跳转，进一步提升 CPU Cache 命中率。非连续 ID 回退到 `QHash` 稀疏表。
+>
+> **V1.2 落地修订（Phase 3 4.1.2 已实现，见 `apps/ens_app/src/datahub/L1SnapshotStore.h/.cpp`）**：
+> ① RingBuffer 所有权由裸指针改 `std::unique_ptr<RingBuffer<Sample>>`（析构自动释放，防泄漏）；`m_bufferByIndex` 用 `resize()` 占位（`assign(fill)` 对 move-only 元素走 std::fill 拷贝会编译失败）；
+> ② 稀疏回退容器由 `QHash<uint32_t, RingBuffer*> ` 改 **`std::unordered_map<uint32_t, std::unique_ptr<RingBuffer<Sample>>>`**——Qt 5 `QHash::insert` 对 move-only value（unique_ptr 不可拷贝）仍走拷贝路径，编译失败；unordered_map 完美转发 + 性能可比；
+> ③ `capacityForPolicy` 公开为 `public static`（pure function，供测试与配置层校验）；返回向上取 2 幂并钳制 `[256, 65536]`。
 
 ```cpp
 // datahub/L1SnapshotStore.h（节选）
@@ -1302,50 +1314,54 @@ private slots:
 ## 6. 模块五：实时数据总线 DataBus（观察者模式）
 
 > **来源**：HLD §2.2 L3 组件；总纲索引 ENS-LLD-305。
+> **V1.2 落地修订**：接口对齐 Phase 3 4.1.3 实现（`apps/ens_app/src/datahub/DataBus.h/.cpp`）。
+> 与 V1.1 草案的差异：① 回调机制由 `std::function` 改为 `IDataBusSubscriber` 纯虚接口（订阅者生命周期显式，可结合 unique_ptr 管理）；② 订阅句柄由 `QUuid` 改为自增 `uint64_t Subscription`（零分配、O(1) 退订）；③ 通配订阅由 `pointId==0` 约定改为显式 `subscribeWildcard()` + 内部哨兵 `UINT32_MAX`；④ `publish` 改两步走（读锁收集 → 解锁回调），消除 onSample 内 unsubscribe 引发读→写锁死锁。
 
 ```cpp
-// datahub/DataBus.h（节选）
+// datahub/DataBus.h（节选，对齐实现）
 namespace ens::datahub {
 
-class DataBus : public QObject {
-    Q_OBJECT
+/// 订阅句柄（0 = 无效；subscribe 返非零自增 id）
+using Subscription = uint64_t;
+
+/// 订阅者接口（订阅者实现须轻量：同步回调，非阻塞）
+class IDataBusSubscriber {
 public:
-    using Subscriber = std::function<void(uint32_t, const Sample&)>;
-
-    /// 订阅某测点（或通配 0=全部）；返回连接句柄用于退订
-    QUuid subscribe(uint32_t pointId, Subscriber cb) {
-        QWriteLocker lock(&m_subLock);
-        const QUuid id = QUuid::createUuid();
-        m_subs.push_back({id, pointId, std::move(cb)});
-        return id;
-    }
-    void unsubscribe(const QUuid& id) {
-        QWriteLocker lock(&m_subLock);
-        m_subs.erase(std::remove_if(m_subs.begin(), m_subs.end(),
-            [&](const Sub& s){ return s.id == id; }), m_subs.end());
-    }
-
-    /// 采集线程调用：发布新 Sample（无锁读 + 拷贝派发）
-    void publish(uint32_t pointId, const Sample& s) noexcept {
-        QReadLocker lock(&m_subLock);                 // 读锁仅保护订阅表，极短
-        for (const auto& sub : m_subs) {
-            if (sub.pointId == 0 || sub.pointId == pointId) {
-                // 跨线程投递：订阅方自行决定 QueuedConnection 或直调
-                sub.cb(pointId, s);
-            }
-        }
-    }
-
-private:
-    struct Sub { QUuid id; uint32_t pointId; Subscriber cb; };
-    QReadWriteLock m_subLock;
-    QList<Sub> m_subs;
+    virtual ~IDataBusSubscriber() = default;
+    virtual void onSample(const Sample& s) noexcept = 0;
 };
 
-} // namespace
+class DataBus {
+public:
+    /// 订阅指定 pointId（多次订阅同一订阅者同一 pointId 返多个 handle，需各自 unsubscribe）
+    Subscription subscribe(uint32_t pointId, IDataBusSubscriber* sub);
+    /// 订阅所有 pointId（通配：每次 broadcast 都触发）
+    Subscription subscribeWildcard(IDataBusSubscriber* sub);
+    /// 按 handle 退订（点订阅 / 通配订阅统一接口）
+    bool unsubscribe(Subscription handle) noexcept;
+
+    /// 广播单点样本（采集线程调用）
+    /// @note 两步走：读锁下收集匹配订阅者 → 解锁后逐个调 onSample
+    void broadcast(const Sample& s);
+
+private:
+    struct Entry { uint32_t pointId; IDataBusSubscriber* sub; };
+    QReadWriteLock m_lock;
+    QVector<Entry> m_entries;                  // 订阅表（点订阅 + 通配混杂）
+    QHash<Subscription, size_t> m_handleIndex; // handle → m_entries 索引（O(1) 退订）
+    Subscription m_nextHandle{1};
+};
+
+} // namespace ens::datahub
 ```
 
-> **设计意图**：DataBus 解耦"数据生产者（L2 解析）"与"消费者（UI/L4）"，订阅表用 `QReadWriteLock` 保护，发布路径持读锁 < 1 μs；跨线程消费一律由订阅方经 `Qt::QueuedConnection` 投递，工作线程绝不直操作 QWidget（总纲 §6.5）。
+> **设计意图**：DataBus 解耦"数据生产者（L2 解析）"与"消费者（UI/L4）"，订阅表用 `QReadWriteLock` 保护，广播路径读锁仅做"收集匹配订阅者指针"（< 1 μs），回调在**解锁后**执行。
+>
+> **两步走必要性（V1.2 新增）**：若持读锁遍历并同步回调，订阅者 `onSample` 内调 `unsubscribe()` 将试图获取写锁——Qt `QReadWriteLock` 同一线程不可重入，直接死锁。两步走将"读表"与"回调"分离，同时保留读锁极短持有（NFR-PERF-12 采集线程零阻塞）。
+>
+> **线程模型**：`broadcast` 在采集线程同步调用订阅者 `onSample`——订阅者实现须轻量、非阻塞，重活（UI 刷新 / L2 落库）自行转移至工作线程（跨线程消费经 `Qt::QueuedConnection`，工作线程绝不直操作 QWidget，总纲 §6.5）。`onSample` 内嵌套 `broadcast` 仍会因 Qt 读锁不可重入而死锁（业务约束：禁止）。
+>
+> **句柄设计（V1.2 新增）**：自增 `uint64_t` 替代 `QUuid`——热路径订阅/退订零分配（`QUuid::createUuid` 每次 16B 生成 + 哈希开销）；`m_handleIndex` 保证退订 O(1)（内部交换删除 + 索引修正）。
 
 ---
 
