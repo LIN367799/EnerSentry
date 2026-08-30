@@ -50,9 +50,9 @@ inline uint16_t crc16Modbus(const uint8_t* data, size_t len) noexcept {
 }
 
 /// RTU 帧内嵌 CRC 校验：frame[0..totalLen-2) 是 PDU，frame[totalLen-2]/[-1] 是低/高字节。
-/// totalLen < 3（至少 addr+fc+crc）视为不合法，返回 false。
+/// totalLen < 4（至少 addr+fc+crc）视为不合法，返回 false。
 inline bool crc16ModbusVerify(const uint8_t* frame, size_t totalLen) noexcept {
-    if (frame == nullptr || totalLen < 3) return false;
+    if (frame == nullptr || totalLen < 4) return false;
     const uint16_t calc = crc16Modbus(frame, totalLen - 2);
     const uint16_t recv = static_cast<uint16_t>(frame[totalLen - 2])
                         | static_cast<uint16_t>(frame[totalLen - 1] << 8);
