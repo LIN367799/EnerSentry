@@ -103,6 +103,10 @@ public:
     /// 用于 PollScheduler 批量组帧：一次 Modbus 读多寄存器。
     std::vector<const PointRuntime*> allOnSlave(uint8_t slaveAddress) const noexcept;
 
+    /// 全表遍历（加载期索引,零扫描）。
+    /// 用于 L1SnapshotStore 策略初始化 / Phase 4 UI 全量点表遍历。
+    std::vector<const PointRuntime*> allPoints() const noexcept;
+
     /// 数据类型对应的寄存器寄存器数（1 register = 2 bytes）。
     /// 用于 ModbusEngine 计算一次 FC03/FC04 读取应发的 quantity。
     ///   Bool    = 1（coil/discrete 按位打包,FC01/02 的 quantity 语义由调用方换算）

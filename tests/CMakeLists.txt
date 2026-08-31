@@ -40,6 +40,7 @@ add_executable(ens_tests
     integration/test_tcp_channel.cpp
     integration/test_p1_closeout.cpp
     integration/test_serial_channel.cpp
+    integration/test_main_loop.cpp
     ../apps/device_simulator/src/core/crc16.cpp
     ../apps/device_simulator/src/core/mbap.cpp
     ../apps/device_simulator/src/core/point_table.cpp
@@ -53,7 +54,9 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/modbus_slave.cpp
     ../apps/device_simulator/src/sim/modbus_tcp_server.cpp
     ../apps/device_simulator/src/sim/rtu_slave_port.h
-    ../apps/device_simulator/src/sim/rtu_slave_port.cpp)
+    ../apps/device_simulator/src/sim/rtu_slave_port.cpp
+    # 切片 14: 主程序接线器编译进测试进程（与 sim 文件同模式,显式列源）
+    ../apps/ens_app/src/app/EnerSentryApp.cpp)
 # ens::protocol 透传 channel/3rdparty（Catch2 + Qt 头经此注入）；core/sim 头经 device_simulator/src 解析
 # 主程序协议侧（apps/ens_app/src/{protocol,datahub}）通过 datahub/Sample.h + protocol/{Crc16,ModbusFrame,PointTable}.h 取值
 target_include_directories(ens_tests PRIVATE

@@ -193,6 +193,16 @@ std::vector<const PointRuntime*> PointTable::allOnSlave(uint8_t slaveAddress) co
     return out;
 }
 
+std::vector<const PointRuntime*> PointTable::allPoints() const noexcept {
+    std::vector<const PointRuntime*> out;
+    out.reserve(m_byPointId.size());
+    for (const auto& [pid, pr] : m_byPointId) {
+        (void)pid;
+        out.push_back(&pr);
+    }
+    return out;
+}
+
 // ── 字节序重组 / 工程值还原 ─────────────────────────────────────────────
 
 size_t PointTable::registerCountFor(DataType dt) noexcept {

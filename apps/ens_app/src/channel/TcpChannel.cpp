@@ -3,6 +3,7 @@
 #include "TcpChannel.h"
 
 #include <QTcpSocket>
+#include <QThread>
 #include <QRandomGenerator>
 
 #include <algorithm>
@@ -55,6 +56,7 @@ void TcpChannel::close() {
     if (m_closed) return;                         // 幂等
     m_closed = true;
     m_opened = false;
+    m_connectedFlag.store(false, std::memory_order_release);
     if (m_reconnectTimer) m_reconnectTimer->stop();
     if (m_socket) {
         m_socket->abort();
@@ -102,7 +104,8 @@ QByteArray TcpChannel::read(int maxBytes) {
 }
 
 bool TcpChannel::isConnected() const {
-    return m_socket && m_socket->state() == QAbstractSocket::ConnectedState;
+    // 线程安全读（flag 由 onConnected/onDisconnected/close 维护，可跨线程调用）
+    return m_connectedFlag.load(std::memory_order_acquire);
 }
 
 void TcpChannel::setReadCallback(ReadCallback cb)                          { m_readCb  = std::move(cb); }
@@ -113,11 +116,13 @@ void TcpChannel::setErrorCallback(ErrorCallback cb)                        { m_e
 void TcpChannel::onConnected() {
     m_backoffMs = 0;                              // 重连成功，重置退避（LLD §3.3.2）
     hardenKeepAlive();
+    m_connectedFlag.store(true, std::memory_order_release);
     if (m_connCb) m_connCb(true);
     emit connectionChanged(true);
 }
 
 void TcpChannel::onDisconnected() {
+    m_connectedFlag.store(false, std::memory_order_release);
     if (m_connCb) m_connCb(false);
     emit connectionChanged(false);
     scheduleReconnect();                          // 断线 → 指数退避重连

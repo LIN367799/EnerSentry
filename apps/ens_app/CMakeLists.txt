@@ -114,8 +114,11 @@ target_include_directories(ens_ui PUBLIC
 target_link_libraries(ens_ui PUBLIC ens::business ens::3rdparty)
 
 # ---------------- 应用基础设施（EXECUTABLE） ----------------
+# 切片 14: main.cpp 换成真接线逻辑（TcpChannel→ModbusEngine→PollScheduler→
+# PointTable→Sample→L1SnapshotStore→DataBus→AlarmEngine），EnerSentryApp 收敛接线。
 add_executable(ens_app
-    src/app/main.cpp)
+    src/app/main.cpp
+    src/app/EnerSentryApp.cpp)
 # 链接顶层 ui，依赖经 PUBLIC 链自动收敛到 channel；3rdparty 直链保证 main.cpp 的 Qt Widgets 符号可达
 target_link_libraries(ens_app PRIVATE ens::ui ens::3rdparty)
 

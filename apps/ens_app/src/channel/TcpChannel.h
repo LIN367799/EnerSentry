@@ -8,6 +8,8 @@
 #include <QAbstractSocket>
 #include <QTimer>
 
+#include <atomic>
+
 class QTcpSocket;
 
 namespace ens::channel {
@@ -25,6 +27,14 @@ public:
     QByteArray read(int maxBytes = 4096) override;
 
     bool isConnected() const override;
+
+    // 线程安全连接标志（2026-08-31 切片 14 修复）：
+    //   QTcpSocket::state() 仅允许在 socket 所在线程调用，而 write() 是 Qt 明确
+    //   线程安全的例外 → 采集线程（worker）直接 write 前调 isConnected() 若走
+    //   m_socket->state() 是跨线程 UB。故 onConnected/onDisconnected/close 维护
+    //   原子标志，isConnected() 读标志（等效：onConnected 时 state==Connected，
+    //   onDisconnected 时 state==Unconnected）。
+    std::atomic<bool> m_connectedFlag{false};
     const ChannelStats& getStats() const override { return m_stats; }
     QString lastError() const override { return m_lastError; }
 

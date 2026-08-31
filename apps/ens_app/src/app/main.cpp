@@ -1,44 +1,74 @@
-#include <QApplication>
-#include <QMainWindow>
-#include <QLabel>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QMetaType>
-#include <QVBoxLayout>
+// src/app/main.cpp —— EnerSentry 主程序入口（切片 14：CLI 最小可运行）。
+//
+// 形态：QCoreApplication（无 GUI）。启动流程：
+//   ens_app --point-table <json> [--host 127.0.0.1] [--port 5020]
+//           [--run-seconds 0] [--poll-ms 100]
+//
+// 接线逻辑全部收敛在 EnerSentryApp（src/app/EnerSentryApp.h/.cpp），
+// 本文件仅做参数解析 + 启动 + console 日志 + 优雅退出。
+// Phase 4 换 GUI 主窗时，本文件替换为 QApplication + 登录对话框 + MainWindow，
+// EnerSentryApp 作为纯数据/业务内核保持不变。
 
-// ens_protocol PUBLIC include src/protocol — 此处直接 include 即可
-#include "ModbusEngine.h"   // Q_DECLARE_METATYPE(ModbusResponse) 来源
+#include "EnerSentryApp.h"
 
-// BUILD-0 暂用 stub 登录框：直接返回 Accepted，
-// 后续替换为 ENS-LLD-500 §7 的 LoginDialog（内嵌 LoginWidget）。
-class LoginDialog : public QDialog {
-public:
-    explicit LoginDialog(QWidget* parent = nullptr) : QDialog(parent) {
-        setWindowTitle("EnerSentry - Login (stub)");
-        auto* lay = new QVBoxLayout(this);
-        lay->addWidget(new QLabel("Login stub — BUILD-0"));
-        auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok);
-        lay->addWidget(bb);
-        connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    }
-};
+#include <QCommandLineOption>
+#include <QCommandLineParser>
+#include <QCoreApplication>
+#include <QTimer>
+
+#include <cstdio>
 
 int main(int argc, char* argv[]) {
-    QApplication app(argc, argv);
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setApplicationName("ens_app");
+    QCoreApplication::setApplicationVersion("0.14.0");
 
-    // 注册 ModbusResponse 到 Qt 元类型系统:跨线程信号(QueuedConnection)
-    // 在 ModbusEngine worker 线程 → 主线程 slot 时,Qt 必须知道类型布局。
-    // 未注册时信号跨线程静默丢弃(用户截图 V2 坑)。
-    qRegisterMetaType<ens::protocol::ModbusResponse>("ens::protocol::ModbusResponse");
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        "EnerSentry host application (CLI, slice 14: minimal runnable)");
+    parser.addHelpOption();
+    parser.addVersionOption();
 
-    // 启动顺序（ENS-LLD-500 §7 / ENS-DEV-ARCH §3.5）：先登录，成功再显主窗
-    LoginDialog dlg;
-    if (dlg.exec() != QDialog::Accepted) return 0;
+    QCommandLineOption hostOpt("host", "simulator TCP host", "host", "127.0.0.1");
+    QCommandLineOption portOpt("port", "simulator TCP port", "port", "5020");
+    QCommandLineOption ptOpt("point-table", "point table JSON path (required)", "path");
+    QCommandLineOption pollOpt("poll-ms", "poll interval in ms", "ms", "100");
+    QCommandLineOption runOpt("run-seconds",
+                              "auto quit after N seconds (0 = run forever)", "sec", "0");
+    parser.addOption(hostOpt);
+    parser.addOption(portOpt);
+    parser.addOption(ptOpt);
+    parser.addOption(pollOpt);
+    parser.addOption(runOpt);
+    parser.process(app);
 
-    QMainWindow w;
-    w.setWindowTitle("EnerSentry");
-    w.setCentralWidget(new QLabel("EnerSentry boot OK — BUILD-0 passed"));
-    w.resize(800, 600);
-    w.show();
-    return app.exec();
+    ens::app::EnerSentryApp::Options opts;
+    opts.host            = parser.value(hostOpt);
+    opts.port            = static_cast<quint16>(parser.value(portOpt).toUInt());
+    opts.pointTablePath  = parser.value(ptOpt);
+    opts.pollIntervalMs  = parser.value(pollOpt).toInt();
+    opts.runSeconds      = parser.value(runOpt).toInt();
+    if (opts.pointTablePath.isEmpty()) {
+        std::fprintf(stderr, "[ENS] usage: --point-table <json> is required\n");
+        return 2;
+    }
+
+    ens::app::EnerSentryApp es(opts);
+    QObject::connect(&es, &ens::app::EnerSentryApp::sampleReady,
+                     [](uint32_t pid, qint64, double v) {
+        std::printf("[ENS] pt=%u value=%.2f\n", pid, v);
+    });
+    QObject::connect(&es, &ens::app::EnerSentryApp::alarmRaised,
+                     [](const QString& text) {
+        std::printf("[ENS] %s\n", qPrintable(text));
+    });
+
+    if (!es.start()) return 1;
+
+    if (opts.runSeconds > 0) {
+        QTimer::singleShot(opts.runSeconds * 1000, &app, &QCoreApplication::quit);
+    }
+    const int rc = app.exec();
+    es.stop();          // 优雅停（事件循环退出后）
+    return rc;
 }
