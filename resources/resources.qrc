@@ -1,0 +1,53 @@
+<RCC>
+  <!-- EnerSentry UI 图标资源（Feather Icons v4.29.2，MIT License，可商用） -->
+  <!-- 用法：代码中引用 :/icons/view_overview.svg；QIcon 经 QSS 主题 currentColor 着色 -->
+  <!-- 语义命名：view_*=七视图切换 / menu_*=菜单 / alarm_*=告警中心 / plot_*=实时曲线 -->
+  <!--          hist_*=历史趋势 / config_*=参数配置 / sbo_*=SBO 控制 / sim_*=测试台 B10 -->
+  <qresource prefix="/icons">
+    <!-- 七视图切换（TopToolBar） -->
+    <file>icons/view_overview.svg</file>
+    <file>icons/view_trend.svg</file>
+    <file>icons/view_alarm.svg</file>
+    <file>icons/view_history.svg</file>
+    <file>icons/view_config.svg</file>
+    <file>icons/view_diag.svg</file>
+    <file>icons/view_sbo.svg</file>
+    <!-- 菜单栏 / 通用 -->
+    <file>icons/menu_open.svg</file>
+    <file>icons/export.svg</file>
+    <file>icons/menu_quit.svg</file>
+    <file>icons/menu_help.svg</file>
+    <file>icons/menu_about.svg</file>
+    <file>icons/lock.svg</file>
+    <file>icons/unlock.svg</file>
+    <file>icons/refresh.svg</file>
+    <!-- 告警中心 -->
+    <file>icons/alarm_ack.svg</file>
+    <file>icons/alarm_ack_all.svg</file>
+    <file>icons/alarm_filter.svg</file>
+    <!-- 实时曲线 / 历史趋势 -->
+    <file>icons/plot_pause.svg</file>
+    <file>icons/plot_play.svg</file>
+    <file>icons/plot_clear.svg</file>
+    <file>icons/plot_cursor.svg</file>
+    <file>icons/plot_snapshot.svg</file>
+    <file>icons/hist_range.svg</file>
+    <file>icons/zoom_in.svg</file>
+    <file>icons/zoom_out.svg</file>
+    <!-- 参数配置 -->
+    <file>icons/config_save.svg</file>
+    <file>icons/config_reset.svg</file>
+    <file>icons/config_import.svg</file>
+    <!-- SBO 安全控制 -->
+    <file>icons/sbo_select.svg</file>
+    <file>icons/sbo_execute.svg</file>
+    <file>icons/sbo_estop.svg</file>
+    <!-- 测试台 B10 GUI 控制台 -->
+    <file>icons/sim_start.svg</file>
+    <file>icons/sim_stop.svg</file>
+    <file>icons/sim_reload.svg</file>
+    <file>icons/sim_log.svg</file>
+    <!-- 应用标识（自绘，储能主题：电池+闪电） -->
+    <file>icons/app_logo.svg</file>
+  </qresource>
+</RCC>
