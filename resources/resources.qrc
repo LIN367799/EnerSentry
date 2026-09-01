@@ -50,4 +50,8 @@
     <!-- 应用标识（自绘，储能主题：电池+闪电） -->
     <file>icons/app_logo.svg</file>
   </qresource>
+  <qresource prefix="/qss">
+    <!-- 暗色工业主题（SRS UI-01；HLD-UI §1.2.1 / LLD-500 §6.3） -->
+    <file>qss/theme.qss</file>
+  </qresource>
 </RCC>

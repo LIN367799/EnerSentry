@@ -29,6 +29,7 @@ add_executable(ens_tests
     unit/test_blackbox.cpp
     unit/test_business_state_machine.cpp
     unit/test_alarm_engine.cpp
+    unit/test_auth_manager.cpp
     unit/test_sbo_state_machine.cpp
     unit/test_business_integration.cpp
     unit/test_fault_injector.cpp

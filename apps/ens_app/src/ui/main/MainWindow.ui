@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1280</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>EnerSentry 储能上位机</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="centralLayout">
+    <item>
+     <widget class="QStackedWidget" name="centralStack">
+      <widget class="QWidget" name="pageOverview"/>
+      <widget class="QWidget" name="pageTrend"/>
+      <widget class="QWidget" name="pageAlarm"/>
+      <widget class="QWidget" name="pageHistory"/>
+      <widget class="QWidget" name="pageConfig"/>
+      <widget class="QWidget" name="pageDiag"/>
+      <widget class="QWidget" name="pageSbo"/>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1280</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>文件(&amp;F)</string>
+    </property>
+    <addaction name="actExit"/>
+   </widget>
+   <widget class="QMenu" name="menuView">
+    <property name="title">
+     <string>视图(&amp;V)</string>
+    </property>
+    <addaction name="actViewOverview"/>
+    <addaction name="actViewTrend"/>
+    <addaction name="actViewAlarm"/>
+    <addaction name="actViewHistory"/>
+    <addaction name="actViewConfig"/>
+    <addaction name="actViewDiag"/>
+    <addaction name="actViewSbo"/>
+   </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="title">
+     <string>工具(&amp;T)</string>
+    </property>
+    <addaction name="actLock"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>帮助(&amp;H)</string>
+    </property>
+    <addaction name="actAbout"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuView"/>
+   <addaction name="menuTools"/>
+   <addaction name="menuHelp"/>
+  </widget>
+  <widget class="QToolBar" name="topToolBar">
+   <property name="windowTitle">
+    <string>视图工具栏</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <addaction name="actViewOverview"/>
+   <addaction name="actViewTrend"/>
+   <addaction name="actViewAlarm"/>
+   <addaction name="actViewHistory"/>
+   <addaction name="actViewConfig"/>
+   <addaction name="actViewDiag"/>
+   <addaction name="actViewSbo"/>
+   <addaction name="separator"/>
+   <addaction name="actLock"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar">
+   <property name="sizeGripEnabled">
+    <bool>true</bool>
+   </property>
+  </widget>
+  <action name="actViewOverview">
+   <property name="text">
+    <string>电站总览</string>
+   </property>
+  </action>
+  <action name="actViewTrend">
+   <property name="text">
+    <string>实时曲线</string>
+   </property>
+  </action>
+  <action name="actViewAlarm">
+   <property name="text">
+    <string>告警中心</string>
+   </property>
+  </action>
+  <action name="actViewHistory">
+   <property name="text">
+    <string>历史趋势</string>
+   </property>
+  </action>
+  <action name="actViewConfig">
+   <property name="text">
+    <string>参数配置</string>
+   </property>
+  </action>
+  <action name="actViewDiag">
+   <property name="text">
+    <string>通信诊断</string>
+   </property>
+  </action>
+  <action name="actViewSbo">
+   <property name="text">
+    <string>SBO 控制</string>
+   </property>
+  </action>
+  <action name="actLock">
+   <property name="text">
+    <string>锁定屏幕(&amp;L)</string>
+   </property>
+  </action>
+  <action name="actExit">
+   <property name="text">
+    <string>退出(&amp;Q)</string>
+   </property>
+  </action>
+  <action name="actAbout">
+   <property name="text">
+    <string>关于(&amp;A)</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

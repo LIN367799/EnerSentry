@@ -28,7 +28,8 @@ add_executable(DeviceSimulator
     src/gui/scenario_runner.ui
     src/gui/scenario_runner.cpp
     src/gui/log_view.ui
-    src/gui/log_view.cpp)
+    src/gui/log_view.cpp
+    ${CMAKE_SOURCE_DIR}/resources/resources.qrc)
 target_include_directories(DeviceSimulator PRIVATE src)
 target_link_libraries(DeviceSimulator PRIVATE ens::3rdparty)
 

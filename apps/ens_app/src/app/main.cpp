@@ -1,34 +1,49 @@
-// src/app/main.cpp —— EnerSentry 主程序入口（切片 14：CLI 最小可运行）。
+// src/app/main.cpp —— EnerSentry 主程序入口（切片 19：GUI 双模式）。
 //
-// 形态：QCoreApplication（无 GUI）。启动流程：
-//   ens_app --point-table <json> [--host 127.0.0.1] [--port 5020]
-//           [--run-seconds 0] [--poll-ms 100]
+// 形态：QApplication（GUI 默认 / --cli 保留原无窗口模式）。
+// GUI 流程：AuthManager → 加载暗色主题 → LoginDialog（exec 成功）→ EnerSentryApp
+//           → MainWindow（依赖注入 DataBus/AlarmEngine/AuthManager）。
+// CLI 流程（--cli，4.3.4 联调资产）：参数解析 + 启动 + console 日志 + 优雅退出。
 //
-// 接线逻辑全部收敛在 EnerSentryApp（src/app/EnerSentryApp.h/.cpp），
-// 本文件仅做参数解析 + 启动 + console 日志 + 优雅退出。
-// Phase 4 换 GUI 主窗时，本文件替换为 QApplication + 登录对话框 + MainWindow，
-// EnerSentryApp 作为纯数据/业务内核保持不变。
+// 接线逻辑全部收敛在 EnerSentryApp（src/app/EnerSentryApp.h/.cpp）；
+// UI 层仅依赖注入抽象（ens::ui 不 include 本文件 / app 层）。
 
 #include "EnerSentryApp.h"
 
+#include "auth/LoginDialog.h"
+#include "common/theme.h"
+#include "main/MainWindow.h"
+
+#include "AuthManager.h"
+
+#include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
-#include <QCoreApplication>
+#include <QMessageBox>
 #include <QTimer>
 
 #include <cstdio>
 
+namespace {
+
+// GUI 模式默认用户表路径（缺失时 AuthManager 回退内置 admin/operator 并告警）
+const char* kDefaultUsersPath = "config/users.json";
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
-    QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName("ens_app");
-    QCoreApplication::setApplicationVersion("0.14.0");
+    QApplication app(argc, argv);
+    QApplication::setApplicationName("ens_app");
+    QApplication::setApplicationVersion("0.19.0");
+    QApplication::setOrganizationName("EnerSentry");
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
-        "EnerSentry host application (CLI, slice 14: minimal runnable)");
+        "EnerSentry host application (GUI default; --cli for headless)");
     parser.addHelpOption();
     parser.addVersionOption();
 
+    QCommandLineOption cliOpt("cli", "headless mode (4.3.4 联调 / 集成测试用)");
     QCommandLineOption hostOpt("host", "simulator TCP host", "host", "127.0.0.1");
     QCommandLineOption portOpt("port", "simulator TCP port", "port", "5020");
     QCommandLineOption ptOpt("point-table", "point table JSON path (required)", "path");
@@ -44,6 +59,8 @@ int main(int argc, char* argv[]) {
     QCommandLineOption sboOpt("cmd",
                               "one-shot SBO cmd: select:slave:reg:value[:e] | operate | cancel",
                               "cmd");
+    QCommandLineOption usersOpt("users", "users.json path", "path", kDefaultUsersPath);
+    parser.addOption(cliOpt);
     parser.addOption(hostOpt);
     parser.addOption(portOpt);
     parser.addOption(ptOpt);
@@ -53,7 +70,10 @@ int main(int argc, char* argv[]) {
     parser.addOption(dataOpt);
     parser.addOption(bboxOpt);
     parser.addOption(sboOpt);
+    parser.addOption(usersOpt);
     parser.process(app);
+
+    const bool cliMode = parser.isSet(cliOpt);
 
     ens::app::EnerSentryApp::Options opts;
     opts.host            = parser.value(hostOpt);
@@ -70,22 +90,54 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
-    ens::app::EnerSentryApp es(opts);
-    QObject::connect(&es, &ens::app::EnerSentryApp::sampleReady,
-                     [](uint32_t pid, qint64, double v) {
-        std::printf("[ENS] pt=%u value=%.2f\n", pid, v);
-    });
-    QObject::connect(&es, &ens::app::EnerSentryApp::alarmRaised,
-                     [](const QString& text) {
-        std::printf("[ENS] %s\n", qPrintable(text));
-    });
-
-    if (!es.start()) return 1;
-
-    if (opts.runSeconds > 0) {
-        QTimer::singleShot(opts.runSeconds * 1000, &app, &QCoreApplication::quit);
+    // ───────────────────────── CLI 模式（原行为，保留联调资产）─────────────────────────
+    if (cliMode) {
+        ens::app::EnerSentryApp es(opts);
+        QObject::connect(&es, &ens::app::EnerSentryApp::sampleReady,
+                         [](uint32_t pid, qint64, double v) {
+            std::printf("[ENS] pt=%u value=%.2f\n", pid, v);
+        });
+        QObject::connect(&es, &ens::app::EnerSentryApp::alarmRaised,
+                         [](const QString& text) {
+            std::printf("[ENS] %s\n", qPrintable(text));
+        });
+        if (!es.start()) return 1;
+        if (opts.runSeconds > 0) {
+            QTimer::singleShot(opts.runSeconds * 1000, &app, &QCoreApplication::quit);
+        }
+        const int rc = app.exec();
+        es.stop();
+        return rc;
     }
+
+    // ───────────────────────── GUI 模式（切片 19）─────────────────────────
+    // 1) 认证（FR-AUTH-01：登录成功才进主窗）
+    ens::business::AuthManager auth;
+    auth.loadUsersFromJson(parser.value(usersOpt));
+
+    // 2) 暗色主题（SRS UI-01）
+    ens::ui::applyTheme(&app);
+
+    // 3) 登录首屏
+    ens::ui::LoginDialog dlg(&auth);
+    if (dlg.exec() != QDialog::Accepted) {
+        return 0;   // 取消登录直接退出
+    }
+
+    // 4) 业务内核（采集/数据/告警管线）
+    ens::app::EnerSentryApp es(opts);
+    if (!es.start()) {
+        QMessageBox::critical(nullptr, QStringLiteral("EnerSentry"),
+                              QStringLiteral("通信内核启动失败，请检查点表路径与端口。"));
+        return 1;
+    }
+
+    // 5) 主窗口（依赖注入，ens::ui 不触碰 app 层头）
+    const QString linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
+    ens::ui::MainWindow w(es.dataBus(), es.alarmEngine(), &auth, linkLabel);
+    w.show();
+
     const int rc = app.exec();
-    es.stop();          // 优雅停（事件循环退出后）
+    es.stop();
     return rc;
 }

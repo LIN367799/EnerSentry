@@ -141,6 +141,10 @@ public:
     size_t   historyPendingCount() const { return m_l2.pendingCount(); }
     uint32_t alarmCount() const { return m_alarm.activeAlarmCount(); }
 
+    // ── 切片 19：UI 依赖注入访问器（只读；ens::ui 层经此拿数据源，不依赖 app 层头）──
+    datahub::DataBus*      dataBus() noexcept      { return &m_bus; }
+    business::AlarmEngine* alarmEngine() noexcept  { return &m_alarm; }
+
 signals:
     void connected();
     void disconnected();

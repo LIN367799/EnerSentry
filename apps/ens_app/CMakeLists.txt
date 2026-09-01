@@ -98,6 +98,7 @@ add_library(ens_business SHARED
     src/business/BusinessStateMachine.cpp
     src/business/AlarmEngine.cpp
     src/business/AlarmRuleLoader.cpp
+    src/business/AuthManager.cpp
     src/business/DeviceSboGuard.cpp
     src/business/SboStateMachine.cpp)
 add_library(ens::business ALIAS ens_business)
@@ -108,8 +109,22 @@ target_compile_definitions(ens_business PRIVATE ENS_BUILD_SHARED)
 target_link_libraries(ens_business PUBLIC ens::datahub ens::protocol ens::export ens::3rdparty)
 
 # ---------------- L5 UI 视图层（STATIC） ----------------
+# 切片 19：认证（LoginDialog/SessionLockDialog）+ MainWindow 框架 + 7 视图骨架 + 主题。
+# STATIC 模块禁导出宏（ENS-DEV-ARCH §3.7）；.ui 经全局 AUTOUIC 自动 uic。
 add_library(ens_ui STATIC
-    src/ui/ui_anchor.cpp)
+    src/ui/ui_anchor.cpp
+    src/ui/common/theme.cpp
+    src/ui/auth/LoginDialog.ui
+    src/ui/auth/LoginDialog.cpp
+    src/ui/auth/SessionLockDialog.ui
+    src/ui/auth/SessionLockDialog.cpp
+    src/ui/main/MainWindow.ui
+    src/ui/main/MainWindow.cpp
+    src/ui/views/OverviewWidget.ui
+    src/ui/views/overview_widget.cpp
+    src/ui/views/AlarmCenterWidget.ui
+    src/ui/views/alarm_center_widget.cpp
+    src/ui/views/placeholder_view.cpp)
 add_library(ens::ui ALIAS ens_ui)
 target_include_directories(ens_ui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ui)
@@ -120,7 +135,8 @@ target_link_libraries(ens_ui PUBLIC ens::business ens::3rdparty)
 # PointTable→Sample→L1SnapshotStore→DataBus→AlarmEngine），EnerSentryApp 收敛接线。
 add_executable(ens_app
     src/app/main.cpp
-    src/app/EnerSentryApp.cpp)
+    src/app/EnerSentryApp.cpp
+    ${CMAKE_SOURCE_DIR}/resources/resources.qrc)
 # 链接顶层 ui，依赖经 PUBLIC 链自动收敛到 channel；3rdparty 直链保证 main.cpp 的 Qt Widgets 符号可达
 target_link_libraries(ens_app PRIVATE ens::ui ens::3rdparty)
 
