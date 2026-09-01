@@ -21,10 +21,13 @@
 #include <QSqlDatabase>
 #include <QString>
 
+#include "IDataAccess.h"   // 切片 24：历史查询抽象
+
 namespace ens::datahub {
 
 /// SQLite 数据访问层(Q_OBJECT 以便 QObject 派生语义,虽本切片不主动用 signal/slot)
-class SQLiteDataAccess : public QObject {
+/// 切片 24：继承 IDataAccess（HistoryTrendWidget 经抽象注入查询历史）
+class SQLiteDataAccess : public QObject, public IDataAccess {
     Q_OBJECT
 public:
     /// @param dataRootDir 月库根目录(各月子目录 <root>/history/YYYYMM/data_YYYYMM.db)
@@ -35,6 +38,11 @@ public:
     SQLiteDataAccess& operator=(const SQLiteDataAccess&) = delete;
     SQLiteDataAccess(SQLiteDataAccess&&) = delete;
     SQLiteDataAccess& operator=(SQLiteDataAccess&&) = delete;
+
+    // ── IDataAccess（切片 24）：历史查询（跨月自动路由）──
+    std::vector<DownSampledSample> queryRange(uint32_t pointId, uint64_t beginMs,
+                                              uint64_t endMs,
+                                              HistoryGranularity gran) override;
 
     // ── 表名/路径路由(LLD-200 §4.3) ──
     /// 粒度 → 表名后缀(_100ms/_1s/_5s/_1m)

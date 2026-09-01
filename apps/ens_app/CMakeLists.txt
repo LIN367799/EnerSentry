@@ -134,6 +134,8 @@ add_library(ens_ui STATIC
     src/ui/views/DiagWidget.cpp
     src/ui/views/ConfigWidget.ui
     src/ui/views/ConfigWidget.cpp
+    src/ui/views/HistoryTrendWidget.ui
+    src/ui/views/HistoryTrendWidget.cpp
     src/ui/views/placeholder_view.cpp)
 add_library(ens::ui ALIAS ens_ui)
 target_include_directories(ens_ui PUBLIC

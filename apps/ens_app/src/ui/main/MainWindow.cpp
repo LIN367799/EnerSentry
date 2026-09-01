@@ -7,6 +7,7 @@
 #include "controls/SBOControlWidget.h"
 #include "views/ConfigWidget.h"
 #include "views/DiagWidget.h"
+#include "views/HistoryTrendWidget.h"
 #include "views/alarm_center_widget.h"
 #include "views/overview_widget.h"
 #include "views/placeholder_view.h"
@@ -107,15 +108,14 @@ void MainWindow::setupViews() {
     m_configView = new ConfigWidget(m_deps.pointTable, m_deps.alarmRulesPath,
                                     m_deps.alarmRuleCount, m_deps.host, m_deps.port,
                                     m_deps.pollMs, this);
-    ui->centralStack->addWidget(m_overview);   // 0 总览
-    ui->centralStack->addWidget(m_chart);      // 1 实时曲线（切片 20）
-    ui->centralStack->addWidget(m_alarmView);  // 2 告警中心
-    // 3 历史趋势（切片 24：IDataAccess 查询层）
-    ui->centralStack->addWidget(new PlaceholderView(
-        QStringLiteral("历史趋势"), QStringLiteral("ENS-LLD-505 HistoryTrendWidget（IDataAccess 历史查询）属切片 24。"), this));
-    ui->centralStack->addWidget(m_configView); // 4 参数配置（切片 23）
-    ui->centralStack->addWidget(m_diagView);   // 5 通信诊断（切片 23）
-    ui->centralStack->addWidget(m_sboView);    // 6 SBO 控制（切片 21）
+    m_historyView = new HistoryTrendWidget(m_deps.dataAccess, m_deps.pointTable, this);
+    ui->centralStack->addWidget(m_overview);    // 0 总览
+    ui->centralStack->addWidget(m_chart);       // 1 实时曲线（切片 20）
+    ui->centralStack->addWidget(m_alarmView);   // 2 告警中心
+    ui->centralStack->addWidget(m_historyView); // 3 历史趋势（切片 24）
+    ui->centralStack->addWidget(m_configView);  // 4 参数配置（切片 23）
+    ui->centralStack->addWidget(m_diagView);    // 5 通信诊断（切片 23）
+    ui->centralStack->addWidget(m_sboView);     // 6 SBO 控制（切片 21）
 }
 
 void MainWindow::switchView(int index) {

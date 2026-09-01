@@ -37,6 +37,7 @@
 #include "AlarmRuleLoader.h"
 #include "BlackBoxManager.h"
 #include "DownSampler.h"
+#include "IDataAccess.h"
 #include "SQLiteDataAccess.h"
 #include "L2HistoryStore.h"
 #include "DeviceSboGuard.h"
@@ -150,6 +151,8 @@ public:
     channel::TcpChannel* channel() noexcept { return &m_channel; }
     const std::shared_ptr<protocol::PointTable>& pointTable() const noexcept { return m_pt; }
     QString alarmRulesPath() const { return m_opts.alarmRulesPath; }
+    // 切片 24：历史查询抽象（HistoryTrendWidget 注入；m_dal 未启用时仍可注入，查询返空）
+    datahub::IDataAccess* dataAccess() noexcept { return &m_dal; }
 
 signals:
     void connected();

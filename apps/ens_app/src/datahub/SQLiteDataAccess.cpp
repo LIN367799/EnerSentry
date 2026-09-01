@@ -4,6 +4,7 @@
 #include "SQLiteDataAccess.h"
 
 #include <atomic>
+#include <algorithm>
 #include <cstdint>
 
 #include <QDateTime>
@@ -247,6 +248,55 @@ bool SQLiteDataAccess::batchInsert(const QString& dbPath, HistoryGranularity gra
     }
     leaveWriteBatch();
     return true;
+}
+
+std::vector<DownSampledSample> SQLiteDataAccess::queryRange(uint32_t pointId,
+                                                            uint64_t beginMs,
+                                                            uint64_t endMs,
+                                                            HistoryGranularity gran) {
+    std::vector<DownSampledSample> out;
+    if (beginMs >= endMs) return out;                       // 边界：空区间
+
+    // 跨月路由：从 beginMs 所在月起逐月推进（每个月的库是独立 DB 文件）
+    QDateTime cur = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(beginMs));
+    cur.setDate(QDate(cur.date().year(), cur.date().month(), 1));
+    cur.setTime(QTime(0, 0, 0));
+    while (cur.toMSecsSinceEpoch() < static_cast<qint64>(endMs)) {
+        const uint64_t monthStart = static_cast<uint64_t>(cur.toMSecsSinceEpoch());
+        const QDateTime nextMonth = cur.addMonths(1);
+        const uint64_t monthEnd   = static_cast<uint64_t>(nextMonth.toMSecsSinceEpoch());
+        const uint64_t qBegin = std::max(beginMs, monthStart);
+        const uint64_t qEnd   = std::min(endMs, monthEnd);
+
+        if (qBegin < qEnd) {
+            const QString table = getTableName(qBegin, gran);
+            if (!table.isEmpty() && openMonth(qBegin)) {
+                QSqlDatabase& db = m_connForPath[getDatabasePath(qBegin)];
+                QSqlQuery q(db);
+                q.prepare(QStringLiteral(
+                    "SELECT ts, v_max, v_min, v_avg, sample_count FROM %1 "
+                    "WHERE point_id=? AND ts>=? AND ts<? ORDER BY ts ASC").arg(table));
+                q.addBindValue(QVariant(static_cast<qlonglong>(pointId)));
+                q.addBindValue(QVariant(static_cast<qlonglong>(qBegin)));
+                q.addBindValue(QVariant(static_cast<qlonglong>(qEnd)));
+                q.exec();
+                if (!q.lastError().isValid()) {
+                    while (q.next()) {
+                        DownSampledSample s;
+                        s.pointId     = pointId;
+                        s.timestamp   = static_cast<uint64_t>(q.value(0).toLongLong());
+                        s.maxValue    = static_cast<float>(q.value(1).toDouble());
+                        s.minValue    = static_cast<float>(q.value(2).toDouble());
+                        s.avgValue    = static_cast<float>(q.value(3).toDouble());
+                        s.sampleCount = static_cast<uint16_t>(q.value(4).toInt());
+                        out.push_back(s);
+                    }
+                }
+            }
+        }
+        cur = nextMonth;
+    }
+    return out;
 }
 
 }  // namespace ens::datahub

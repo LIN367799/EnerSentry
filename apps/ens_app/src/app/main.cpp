@@ -155,6 +155,7 @@ int main(int argc, char* argv[]) {
     deps.host = opts.host;
     deps.port = opts.port;
     deps.pollMs = opts.pollIntervalMs;
+    deps.dataAccess = es.dataAccess();   // 切片 24：历史查询（未启用 --data-dir 时查询返空）
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
 
     ens::ui::MainWindow w(deps);

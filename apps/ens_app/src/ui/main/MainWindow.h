@@ -36,6 +36,7 @@ struct SboSelectRequest;
 
 namespace ens::datahub {
 class DataBus;
+class IDataAccess;
 }  // namespace ens::datahub
 
 namespace Ui {
@@ -50,6 +51,7 @@ class RealtimeChartWidget;
 class SBOControlWidget;
 class DiagWidget;
 class ConfigWidget;
+class HistoryTrendWidget;
 
 /// 主窗口依赖聚合（main.cpp 一次构造传入；ens::ui 不触碰 app 层）
 struct UiDeps {
@@ -73,6 +75,8 @@ struct UiDeps {
     QString host;
     quint16 port = 0;
     int     pollMs = 0;
+    // 切片 24：历史查询（HistoryTrendWidget）
+    ens::datahub::IDataAccess* dataAccess = nullptr;
 
     QString linkLabel;      // 状态栏：连接标识
 };
@@ -118,6 +122,7 @@ private:
     SBOControlWidget*   m_sboView   = nullptr;
     DiagWidget*         m_diagView  = nullptr;
     ConfigWidget*       m_configView = nullptr;
+    HistoryTrendWidget* m_historyView = nullptr;
 
     QLabel* m_lblLink  = nullptr;
     QLabel* m_lblClock = nullptr;
