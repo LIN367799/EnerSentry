@@ -1,0 +1,8 @@
+{
+  "comment": "EnerSentry 用户表样例（NFR-SEC-06，切片 28）。密码支持两种格式：sha256$<salt>$<hex>（推荐，生产用随机 salt）或明文（旧文件兼容，开发期）。本样例密码：admin/Admin@123、engineer/Eng@123、operator/Operator@123。",
+  "users": [
+    {"username": "admin",    "password": "sha256$ens-salt-v1$21888813a45eed2911e66baa92ca2cc6269ce425b8d3ff2b303ce139a03283e1", "role": "Admin"},
+    {"username": "engineer", "password": "sha256$ens-salt-v1$b58017a3ed9d9c4fd972acc85f50e1935d106800e78d32497342b46966d201de", "role": "Engineer"},
+    {"username": "operator", "password": "sha256$ens-salt-v1$0acfaa9f0eac4258061f2521fabb91108bb97f07271d4acc2d256e16d4d03a3b", "role": "Operator"}
+  ]
+}

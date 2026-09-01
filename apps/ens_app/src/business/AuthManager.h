@@ -25,6 +25,7 @@
 #include <ens/export.hpp>   // ENS_BUSINESS_API（SHARED 导出宏）
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -85,16 +86,23 @@ class ENS_BUSINESS_API AuthManager : public QObject {
     Q_OBJECT
 public:
     static constexpr int kAuditCap = 1000;
+    // 登录失败锁定（FR-AUTH-06 / NFR-SEC-06，切片 28）
+    static constexpr int    kMaxLoginFails = 5;          // 连续失败 N 次
+    static constexpr qint64 kLockMs        = 15LL * 60 * 1000;   // 锁 15 分钟
 
     explicit AuthManager(QObject* parent = nullptr);
 
     /// 从 users.json 加载用户表。失败/空表时回退内置默认用户（admin/operator）。
+    /// 密码字段支持两种格式：明文（旧文件兼容）或 sha256$<salt>$<hex>（NFR-SEC-06）。
     bool loadUsersFromJson(const QString& path);
 
     /// 登录：用户名+密码校验通过 → 建立会话（角色、空闲计时重置）。
-    /// @return true 成功；false 用户不存在/密码错误/已锁定
+    /// @return true 成功；false 用户不存在/密码错误/被失败锁定
     bool login(const QString& username, const QString& password);
     void logout();
+
+    /// 用户当前失败锁定剩余秒数（>0 表示该用户名被锁定；UI 可提示）
+    int lockRemainingSeconds(const QString& username) const;
 
     bool isLoggedIn() const { return m_loggedIn; }
     QString currentUser() const { return m_currentUser; }
@@ -131,8 +139,12 @@ signals:
 private:
     struct UserRec {
         QString  username;
-        QString  password;   // 明文（V2.0 改哈希）
+        QString  password;   // 明文（旧文件兼容）或 sha256$<salt>$<hex>（NFR-SEC-06）
         UserRole role = UserRole::Operator;
+    };
+    struct FailRec {
+        int    count        = 0;
+        qint64 lockUntilMs  = 0;
     };
     const UserRec* findUser(const QString& username) const;
     /// 角色矩阵：该角色是否拥有权限点
@@ -146,6 +158,8 @@ private:
     bool     m_loggedIn = false;
     bool     m_locked   = false;
     QElapsedTimer m_idle;   // 登录/解锁/touchActivity 时 restart()
+
+    QHash<QString, FailRec> m_fails;   // 登录失败计数/锁定（按用户名，FR-AUTH-06）
 
     std::vector<AuditEntry> m_audit;   // 环形（kAuditCap 截断）
     int m_auditHead = 0;               // 下一写入槽（环形）

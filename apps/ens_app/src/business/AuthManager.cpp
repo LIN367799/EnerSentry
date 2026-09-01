@@ -2,11 +2,13 @@
 #include "AuthManager.h"
 
 #include <QDateTime>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QStringList>
 
 #include <algorithm>
 #include <initializer_list>
@@ -16,11 +18,13 @@ namespace ens::business {
 
 namespace {
 
-// 内置默认用户（users.json 缺失/空表时的开发期回退）
+// 内置默认用户（users.json 缺失/空表时的开发期回退）。
+// 密码为 sha256$<salt>$<hex> 哈希（NFR-SEC-06，切片 28；salt 固定仅演示用，
+// 生产用户由用户管理 UI 用随机 salt 生成）。
 const std::initializer_list<std::tuple<const char*, const char*, const char*>>
     kDefaultUsers = {
-        {"admin",    "Admin@123",    "Admin"},
-        {"operator", "Operator@123", "Operator"},
+        {"admin",    "sha256$ens-salt-v1$21888813a45eed2911e66baa92ca2cc6269ce425b8d3ff2b303ce139a03283e1", "Admin"},
+        {"operator", "sha256$ens-salt-v1$0acfaa9f0eac4258061f2521fabb91108bb97f07271d4acc2d256e16d4d03a3b", "Operator"},
 };
 
 UserRole roleFromString(const QString& s) {
@@ -28,6 +32,23 @@ UserRole roleFromString(const QString& s) {
     if (low == QStringLiteral("admin"))    return UserRole::Admin;
     if (low == QStringLiteral("engineer")) return UserRole::Engineer;
     return UserRole::Operator;
+}
+
+QString sha256Hex(const QByteArray& data) {
+    return QString::fromLatin1(
+        QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex());
+}
+
+/// 密码校验：支持 sha256$salt$hash（NFR-SEC-06）与明文（旧 users.json 兼容）
+bool verifyPassword(const QString& stored, const QString& password) {
+    if (stored.startsWith(QStringLiteral("sha256$"))) {
+        const QStringList parts = stored.split(QLatin1Char('$'));
+        if (parts.size() != 3) return false;
+        const QString expect = parts.at(2);
+        const QString actual = sha256Hex(parts.at(1).toUtf8() + password.toUtf8());
+        return actual == expect;
+    }
+    return stored == password;
 }
 
 }  // namespace
@@ -74,11 +95,29 @@ bool AuthManager::loadUsersFromJson(const QString& path) {
 
 bool AuthManager::login(const QString& username, const QString& password) {
     if (m_locked) return false;
-    const UserRec* u = findUser(username);
-    if (!u || u->password != password) {
-        appendAudit(username, QStringLiteral("login"), QStringLiteral("rejected"), false);
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+
+    // FR-AUTH-06：失败锁定检查（该用户名锁定中 → 拒绝）
+    const auto failIt = m_fails.constFind(username);
+    if (failIt != m_fails.constEnd() && failIt->lockUntilMs > nowMs) {
+        appendAudit(username, QStringLiteral("login"), QStringLiteral("locked"), false);
         return false;
     }
+
+    const UserRec* u = findUser(username);
+    if (!u || !verifyPassword(u->password, password)) {
+        FailRec& f = m_fails[username];
+        ++f.count;
+        if (f.count >= kMaxLoginFails) {
+            f.lockUntilMs = nowMs + kLockMs;
+            f.count = 0;
+            appendAudit(username, QStringLiteral("login"), QStringLiteral("locked-5x"), false);
+        } else {
+            appendAudit(username, QStringLiteral("login"), QStringLiteral("rejected"), false);
+        }
+        return false;
+    }
+    m_fails.remove(username);   // 成功登录清失败计数
     m_currentUser = username;
     m_currentRole = u->role;
     m_loggedIn = true;
@@ -87,6 +126,13 @@ bool AuthManager::login(const QString& username, const QString& password) {
     appendAudit(m_currentUser, QStringLiteral("login"), QStringLiteral("ok"), true);
     emit loginChanged(m_currentUser, static_cast<int>(m_currentRole));
     return true;
+}
+
+int AuthManager::lockRemainingSeconds(const QString& username) const {
+    const auto it = m_fails.constFind(username);
+    if (it == m_fails.constEnd()) return 0;
+    const qint64 remain = it->lockUntilMs - QDateTime::currentMSecsSinceEpoch();
+    return remain > 0 ? static_cast<int>(remain / 1000) : 0;
 }
 
 void AuthManager::logout() {
@@ -110,7 +156,7 @@ void AuthManager::lock() {
 bool AuthManager::unlock(const QString& password) {
     if (!m_loggedIn || !m_locked) return false;
     const UserRec* u = findUser(m_currentUser);
-    if (!u || u->password != password) {
+    if (!u || !verifyPassword(u->password, password)) {
         appendAudit(m_currentUser, QStringLiteral("unlock"), QStringLiteral("rejected"), false);
         return false;
     }
