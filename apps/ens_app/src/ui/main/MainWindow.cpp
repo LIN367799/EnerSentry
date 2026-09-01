@@ -4,6 +4,7 @@
 
 #include "auth/SessionLockDialog.h"
 #include "charts/RealtimeChartWidget.h"
+#include "controls/AuditLogDialog.h"
 #include "controls/SBOControlWidget.h"
 #include "views/ConfigWidget.h"
 #include "views/DiagWidget.h"
@@ -53,6 +54,7 @@ MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
     }
 
     connect(ui->actLock,  &QAction::triggered, this, &MainWindow::onLockClicked);
+    connect(ui->actAudit, &QAction::triggered, this, &MainWindow::onAuditClicked);
     connect(ui->actExit,  &QAction::triggered, this, &MainWindow::close);
     connect(ui->actAbout, &QAction::triggered, this, &MainWindow::onAbout);
 
@@ -91,6 +93,7 @@ void MainWindow::setupIcons() {
     ui->actViewDiag->setIcon(QIcon(QStringLiteral(":/icons/view_diag.svg")));
     ui->actViewSbo->setIcon(QIcon(QStringLiteral(":/icons/view_sbo.svg")));
     ui->actLock->setIcon(QIcon(QStringLiteral(":/icons/lock.svg")));
+    ui->actAudit->setIcon(QIcon(QStringLiteral(":/icons/view_history.svg")));
     ui->actExit->setIcon(QIcon(QStringLiteral(":/icons/menu_quit.svg")));
     ui->actAbout->setIcon(QIcon(QStringLiteral(":/icons/menu_about.svg")));
 }
@@ -132,6 +135,12 @@ void MainWindow::switchView(int index) {
 
 void MainWindow::onLockClicked() {
     doLock();
+}
+
+void MainWindow::onAuditClicked() {
+    if (!m_deps.auth) return;
+    AuditLogDialog dlg(m_deps.auth, this);
+    dlg.exec();
 }
 
 void MainWindow::doLock() {
@@ -188,6 +197,9 @@ void MainWindow::applyPermissionFilter() {
     const bool isOperator = (m_deps.auth->currentRole() == ens::business::UserRole::Operator);
     ui->actViewSbo->setEnabled(!isOperator);
     ui->actViewConfig->setEnabled(!isOperator);
+    // 审计日志 Admin-only（切片 30；FR-AUTH-04 审计不可被普通角色篡改）
+    const bool isAdmin = (m_deps.auth->currentRole() == ens::business::UserRole::Admin);
+    ui->actAudit->setEnabled(isAdmin);
     // 越权视图兜底：恢复/登录时若停在禁页 → 回总览
     const int cur = ui->centralStack->currentIndex();
     if (isOperator && (cur == 4 || cur == 6)) {

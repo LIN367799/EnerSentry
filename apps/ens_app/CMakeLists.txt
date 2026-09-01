@@ -126,6 +126,8 @@ add_library(ens_ui STATIC
     src/ui/charts/OpenGLDetector.cpp
     src/ui/controls/SBOControlWidget.ui
     src/ui/controls/SBOControlWidget.cpp
+    src/ui/controls/AuditLogDialog.ui
+    src/ui/controls/AuditLogDialog.cpp
     src/ui/views/OverviewWidget.ui
     src/ui/views/overview_widget.cpp
     src/ui/views/AlarmCenterWidget.ui

@@ -59,6 +59,7 @@
     <property name="title">
      <string>工具(&amp;T)</string>
     </property>
+    <addaction name="actAudit"/>
     <addaction name="actLock"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
@@ -132,6 +133,11 @@
   <action name="actLock">
    <property name="text">
     <string>锁定屏幕(&amp;L)</string>
+   </property>
+  </action>
+  <action name="actAudit">
+   <property name="text">
+    <string>审计日志(&amp;A)</string>
    </property>
   </action>
   <action name="actExit">

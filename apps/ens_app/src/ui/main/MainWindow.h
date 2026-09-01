@@ -101,6 +101,7 @@ protected:
 private slots:
     void switchView(int index);
     void onLockClicked();
+    void onAuditClicked();   // 切片 30：审计日志对话框
     void onAbout();
     void onStatusTick();   // 1s：时钟 + idle 超时检查 + 告警计数
 
