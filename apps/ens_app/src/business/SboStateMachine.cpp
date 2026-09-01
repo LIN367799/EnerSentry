@@ -156,6 +156,8 @@ void SboStateMachine::enterArmedState(const SboSelectRequest& req,
 
 void SboStateMachine::transitionTo(SBOState next) {
     m_state = next;
+    // 切片 21：统一状态通知（UI 按钮态 / 测试断言）
+    emit sboStateChanged(m_state);
 }
 
 void SboStateMachine::forceAbort(const QString& reason) {

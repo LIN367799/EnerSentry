@@ -1,9 +1,10 @@
-// src/ui/main/MainWindow.cpp —— 主窗口框架实现（切片 19）。
+// src/ui/main/MainWindow.cpp —— 主窗口框架实现（切片 19；切片 21：UiDeps + SBO + QSettings）。
 #include "main/MainWindow.h"
 #include "ui_MainWindow.h"
 
 #include "auth/SessionLockDialog.h"
 #include "charts/RealtimeChartWidget.h"
+#include "controls/SBOControlWidget.h"
 #include "views/alarm_center_widget.h"
 #include "views/overview_widget.h"
 #include "views/placeholder_view.h"
@@ -15,6 +16,7 @@
 #include <QDateTime>
 #include <QIcon>
 #include <QMessageBox>
+#include <QSettings>
 #include <QVector>
 
 namespace ens::ui {
@@ -30,11 +32,8 @@ QString roleText(ens::business::UserRole r) {
 }
 }  // namespace
 
-MainWindow::MainWindow(ens::datahub::DataBus* bus, ens::business::AlarmEngine* alarm,
-                       ens::business::AuthManager* auth, const QString& linkLabel,
-                       QWidget* parent)
-    : QMainWindow(parent), ui(new Ui::MainWindow), m_bus(bus), m_alarm(alarm),
-      m_auth(auth), m_linkLabel(linkLabel) {
+MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
+    : QMainWindow(parent), ui(new Ui::MainWindow), m_deps(deps) {
     ui->setupUi(this);
     setupIcons();
     setupViews();
@@ -52,7 +51,7 @@ MainWindow::MainWindow(ens::datahub::DataBus* bus, ens::business::AlarmEngine* a
     connect(ui->actAbout, &QAction::triggered, this, &MainWindow::onAbout);
 
     // ── 状态栏 ──
-    m_lblLink  = new QLabel(m_linkLabel, this);
+    m_lblLink  = new QLabel(m_deps.linkLabel, this);
     m_lblClock = new QLabel(QStringLiteral("--:--:--"), this);
     m_lblAlarm = new QLabel(QStringLiteral("告警 0"), this);
     m_lblUser  = new QLabel(QStringLiteral("未登录"), this);
@@ -65,7 +64,7 @@ MainWindow::MainWindow(ens::datahub::DataBus* bus, ens::business::AlarmEngine* a
     connect(&m_statusTimer, &QTimer::timeout, this, &MainWindow::onStatusTick);
     m_statusTimer.start();
 
-    switchView(0);
+    restoreWindowState();   // QSettings：几何 + 最后视图（切片 21）
     updateIdentityLabel();
 }
 
@@ -96,12 +95,13 @@ void MainWindow::setupViews() {
         p->deleteLater();
     }
 
-    // 真实数据视图
-    m_overview  = new OverviewWidget(m_bus, this);
-    m_alarmView = new AlarmCenterWidget(m_alarm, this);
-    m_chart     = new RealtimeChartWidget(m_bus, this);
+    m_overview  = new OverviewWidget(m_deps.bus, this);
+    m_alarmView = new AlarmCenterWidget(m_deps.alarm, this);
+    m_chart     = new RealtimeChartWidget(m_deps.bus, this);
+    m_sboView   = new SBOControlWidget(m_deps.sbo, m_deps.sboSelect, m_deps.sboOperate,
+                                       m_deps.sboCancel, this);
     ui->centralStack->addWidget(m_overview);   // 0 总览
-    ui->centralStack->addWidget(m_chart);      // 1 实时曲线（切片 20：QCustomPlot 30Hz 批处理 + 降采样）
+    ui->centralStack->addWidget(m_chart);      // 1 实时曲线（切片 20）
     ui->centralStack->addWidget(m_alarmView);  // 2 告警中心
     // 3 历史趋势
     ui->centralStack->addWidget(new PlaceholderView(
@@ -112,9 +112,7 @@ void MainWindow::setupViews() {
     // 5 通信诊断
     ui->centralStack->addWidget(new PlaceholderView(
         QStringLiteral("通信诊断"), QStringLiteral("ENS-LLD-507 DiagWidget（IChannel::getStats 链路质量）属后续切片。"), this));
-    // 6 SBO 控制
-    ui->centralStack->addWidget(new PlaceholderView(
-        QStringLiteral("SBO 安全控制"), QStringLiteral("ENS-LLD-508 SBOControlWidget（ISBOManager 下发）属后续切片。"), this));
+    ui->centralStack->addWidget(m_sboView);    // 6 SBO 控制（切片 21）
 }
 
 void MainWindow::switchView(int index) {
@@ -130,17 +128,17 @@ void MainWindow::onLockClicked() {
 }
 
 void MainWindow::doLock() {
-    if (!m_auth || !m_auth->isLoggedIn() || m_locked) return;
-    m_auth->lock();
+    if (!m_deps.auth || !m_deps.auth->isLoggedIn() || m_locked) return;
+    m_deps.auth->lock();
     m_locked = true;
-    SessionLockDialog dlg(m_auth, this);
+    SessionLockDialog dlg(m_deps.auth, this);
     const int rc = dlg.exec();
     m_locked = false;
     if (rc == QDialog::Accepted) {
         updateIdentityLabel();
     } else {
         // 解锁失败/关闭：退出登录，回到登录首屏（close 由 main 决定）
-        m_auth->logout();
+        m_deps.auth->logout();
         close();
     }
 }
@@ -149,7 +147,7 @@ void MainWindow::onAbout() {
     QMessageBox::about(this, QStringLiteral("关于 EnerSentry"),
         QStringLiteral(
             "<b>EnerSentry 储能上位机</b><br>"
-            "Phase 4 切片 19：认证 + 主窗口框架 + 暗色主题<br><br>"
+            "Phase 4 切片 21：SBO 控制面板 + OpenGL/High DPI/QSettings<br><br>"
             "五层架构：channel → protocol → datahub → business → ui<br>"
             "图标：Feather Icons v4.29.2 (MIT)"));
 }
@@ -158,20 +156,20 @@ void MainWindow::onStatusTick() {
     // 时钟
     m_lblClock->setText(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")));
     // 告警计数
-    if (m_alarm) {
-        m_lblAlarm->setText(QStringLiteral("告警 %1").arg(m_alarm->activeAlarmCount()));
+    if (m_deps.alarm) {
+        m_lblAlarm->setText(QStringLiteral("告警 %1").arg(m_deps.alarm->activeAlarmCount()));
     }
     // 会话超时自动锁定（FR-AUTH-05）
-    if (m_auth && m_auth->isLoggedIn() && !m_locked &&
-        m_auth->idleSeconds() >= kIdleLockSeconds) {
+    if (m_deps.auth && m_deps.auth->isLoggedIn() && !m_locked &&
+        m_deps.auth->idleSeconds() >= kIdleLockSeconds) {
         doLock();
     }
 }
 
 void MainWindow::updateIdentityLabel() {
-    if (m_auth && m_auth->isLoggedIn()) {
+    if (m_deps.auth && m_deps.auth->isLoggedIn()) {
         m_lblUser->setText(QStringLiteral("%1 · %2")
-                               .arg(m_auth->currentUser(), roleText(m_auth->currentRole())));
+                               .arg(m_deps.auth->currentUser(), roleText(m_deps.auth->currentRole())));
     } else {
         m_lblUser->setText(QStringLiteral("未登录"));
     }
@@ -182,7 +180,24 @@ void MainWindow::applyPermissionFilter() {
     // （Admin 全量 / Engineer 控制+配置 / Operator 只读）。当前空实现占位。
 }
 
+void MainWindow::restoreWindowState() {
+    QSettings s(QStringLiteral("EnerSentry"), QStringLiteral("ens_app"));
+    const QByteArray geo = s.value(QStringLiteral("main/geometry")).toByteArray();
+    if (!geo.isEmpty()) restoreGeometry(geo);
+    const int view = s.value(QStringLiteral("main/viewIndex"), 0).toInt();
+    if (view >= 0 && view < ui->centralStack->count()) {
+        switchView(view);
+    }
+}
+
+void MainWindow::saveWindowState() {
+    QSettings s(QStringLiteral("EnerSentry"), QStringLiteral("ens_app"));
+    s.setValue(QStringLiteral("main/geometry"), saveGeometry());
+    s.setValue(QStringLiteral("main/viewIndex"), ui->centralStack->currentIndex());
+}
+
 void MainWindow::closeEvent(QCloseEvent* e) {
+    saveWindowState();   // 切片 21：窗口几何 + 最后视图持久化
     QMainWindow::closeEvent(e);
 }
 

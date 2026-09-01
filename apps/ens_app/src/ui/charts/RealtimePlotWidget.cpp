@@ -1,6 +1,7 @@
 // src/ui/charts/RealtimePlotWidget.cpp —— 实时曲线渲染实现（ADR-22）。
 #include "charts/RealtimePlotWidget.h"
 
+#include "charts/OpenGLDetector.h"
 #include "charts/RenderDownsampler.h"
 
 #include <QHBoxLayout>
@@ -32,6 +33,9 @@ RealtimePlotWidget::RealtimePlotWidget(QWidget* parent) : QWidget(parent) {
     m_plot->xAxis->setLabel(QStringLiteral("时间 (s)"));
     m_plot->yAxis->setLabel(QStringLiteral("工程值"));
     m_plot->axisRect()->setBackground(QBrush(QColor(0x1c, 0x21, 0x27)));
+
+    // OpenGL 加速（无独显/远程会话自动回退软件渲染，HLD-UI §4.3）
+    OpenGLDetector::applyTo(m_plot);
 
     // 调色板（暗色主题亮色系，8 通道上限）
     m_palette = {QColor(0x4f, 0xc3, 0xf7), QColor(0xef, 0x53, 0x50),

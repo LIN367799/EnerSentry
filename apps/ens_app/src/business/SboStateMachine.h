@@ -89,6 +89,8 @@ public:
     void forceLinkDownForTest(int flappingMs = 0);
 
 signals:
+    /// 切片 21：统一状态变更信号（UI 按钮态刷新；LLD-500 5.1.3 ControlPanel 绑定）
+    void sboStateChanged(ens::business::SBOState state);
     void armedAcquired(const QString& sequenceId, const SboDeviceKey& key);
     void armedRejected(const QString& sequenceId, const SboDeviceKey& key,
                        const QString& busyBy, int64_t elapsedMs);

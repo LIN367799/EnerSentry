@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SBOControlWidget</class>
+ <widget class="QWidget" name="SBOControlWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>760</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <item>
+    <widget class="QGroupBox" name="grpParams">
+     <property name="title">
+      <string>控制参数（Select Before Operate，FR-CTRL-02）</string>
+     </property>
+     <layout class="QGridLayout" name="paramGrid">
+      <item row="0" column="0">
+       <widget class="QLabel" name="lblSlave">
+        <property name="text">
+         <string>从站 ID</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QSpinBox" name="spinSlave">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>23</number>
+        </property>
+        <property name="value">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QLabel" name="lblReg">
+        <property name="text">
+         <string>寄存器地址</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QSpinBox" name="spinReg">
+        <property name="maximum">
+         <number>65535</number>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="lblValue">
+        <property name="text">
+         <string>预置值</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="spinValue">
+        <property name="maximum">
+         <number>65535</number>
+        </property>
+        <property name="value">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2" colspan="2">
+       <widget class="QCheckBox" name="checkEmergency">
+        <property name="text">
+         <string>急停（超时窗口缩为 3s）</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="grpState">
+     <property name="title">
+      <string>状态机</string>
+     </property>
+     <layout class="QHBoxLayout" name="stateLayout">
+      <item>
+       <widget class="QLabel" name="lblStateTitle">
+        <property name="text">
+         <string>当前状态</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="lblState">
+        <property name="text">
+         <string>待命 (Idle)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="stateSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="btnLayout">
+     <item>
+      <widget class="QPushButton" name="btnSelect">
+       <property name="text">
+        <string>Select 选择</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnOperate">
+       <property name="text">
+        <string>Operate 执行</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnCancel">
+       <property name="text">
+        <string>Cancel 取消</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="btnSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="lblDetail">
+     <property name="text">
+      <string>操作需 RBAC 权限（V1.6）；断链自动清锁（FR-CTRL-07）。</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="rootSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

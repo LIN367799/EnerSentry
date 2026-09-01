@@ -144,6 +144,8 @@ public:
     // ── 切片 19：UI 依赖注入访问器（只读；ens::ui 层经此拿数据源，不依赖 app 层头）──
     datahub::DataBus*      dataBus() noexcept      { return &m_bus; }
     business::AlarmEngine* alarmEngine() noexcept  { return &m_alarm; }
+    // 切片 21：SBO 状态机（UI 绑定 sboStateChanged；下发仍经 submitSboXxx 公开方法）
+    business::SboStateMachine* sboStateMachine() noexcept { return &m_sbo; }
 
 signals:
     void connected();

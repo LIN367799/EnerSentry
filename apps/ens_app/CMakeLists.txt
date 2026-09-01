@@ -123,6 +123,9 @@ add_library(ens_ui STATIC
     src/ui/charts/RenderDownsampler.cpp
     src/ui/charts/RealtimePlotWidget.cpp
     src/ui/charts/RealtimeChartWidget.cpp
+    src/ui/charts/OpenGLDetector.cpp
+    src/ui/controls/SBOControlWidget.ui
+    src/ui/controls/SBOControlWidget.cpp
     src/ui/views/OverviewWidget.ui
     src/ui/views/overview_widget.cpp
     src/ui/views/AlarmCenterWidget.ui

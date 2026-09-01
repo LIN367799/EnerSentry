@@ -32,6 +32,10 @@ const char* kDefaultUsersPath = "config/users.json";
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    // High DPI（5.1.4 起步：必须在 QApplication 构造前设置，HLD-UI §4.4）
+    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+
     QApplication app(argc, argv);
     QApplication::setApplicationName("ens_app");
     QApplication::setApplicationVersion("0.19.0");
@@ -132,9 +136,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 5) 主窗口（依赖注入，ens::ui 不触碰 app 层头）
-    const QString linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
-    ens::ui::MainWindow w(es.dataBus(), es.alarmEngine(), &auth, linkLabel);
+    // 5) 主窗口（UiDeps 依赖注入，ens::ui 不触碰 app 层头）
+    ens::ui::UiDeps deps;
+    deps.bus   = es.dataBus();
+    deps.alarm = es.alarmEngine();
+    deps.auth  = &auth;
+    deps.sbo   = es.sboStateMachine();
+    deps.sboSelect = [&es](const ens::business::SboSelectRequest& req) {
+        return es.submitSboSelect(req.slaveId, req.registerAddr, req.value, req.emergency);
+    };
+    deps.sboOperate = [&es](const QString& seq) { return es.submitSboOperate(seq); };
+    deps.sboCancel  = [&es](const QString& seq) { return es.submitSboCancel(seq); };
+    deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
+
+    ens::ui::MainWindow w(deps);
     w.show();
 
     const int rc = app.exec();
