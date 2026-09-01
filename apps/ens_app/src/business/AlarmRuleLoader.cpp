@@ -81,6 +81,9 @@ int AlarmRuleLoader::loadFromFile(const std::filesystem::path& jsonPath,
         }
         r.onThreshold         = static_cast<float>(j.value("onThreshold", 0.0));
         r.offThreshold        = static_cast<float>(j.value("offThreshold", 0.0));
+        // 切片 29：direction 支持 "high"/"low"（默认 high，兼容既有规则 JSON）
+        const std::string dir = j.value("direction", std::string("high"));
+        r.direction = (dir == "low") ? AlarmDirection::Low : AlarmDirection::High;
         r.enabled             = j.value("enabled", true);
         r.onDelayMs           = j.value("onDelayMs", uint32_t{3000});
         r.offDelayMs          = j.value("offDelayMs", uint32_t{3000});

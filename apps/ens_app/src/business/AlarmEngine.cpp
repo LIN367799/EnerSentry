@@ -190,7 +190,12 @@ void AlarmEngine::evaluate(uint32_t pointId, uint64_t tsEpoch, float value) {
     const int64_t nowMono = MonotonicClock::nowMs();
 
     // ═══ §2.3.1 迟滞 + §2.3.2 On/Off-Delay ═══
-    if (value > r.onThreshold) {
+    // 切片 29：按方向判定——High：越上阈触发/落回下阈恢复；Low：跌破下阈触发/回升上阈恢复
+    const bool inOnSide  = (r.direction == AlarmDirection::Low) ? (value < r.onThreshold)
+                                                                 : (value > r.onThreshold);
+    const bool inOffSide = (r.direction == AlarmDirection::Low) ? (value > r.offThreshold)
+                                                                 : (value < r.offThreshold);
+    if (inOnSide) {
         // §2.3.4 风暴判定入口：每次越界 evaluate 都记录时间戳(滑动窗口计数)
         (void)isStormTriggered(nowMono);
         // 越界：进入候选（如未在带内）
@@ -204,13 +209,13 @@ void AlarmEngine::evaluate(uint32_t pointId, uint64_t tsEpoch, float value) {
             st.inAlarmBand  = true;
             raiseAlarm(pointId, r, value, nowMono);
         }
-    } else if (value < r.offThreshold) {
-        // 回落：在带内 → 进入恢复候选
+    } else if (inOffSide) {
+        // 回落（低告警=回升）：在带内 → 进入恢复候选
         if (st.inAlarmBand && !st.pendingOff) {
             st.pendingOff   = true;
             st.offSinceMono = nowMono;
         }
-        // 持续低于 offThreshold offDelayMs → 恢复
+        // 持续处于恢复侧 offDelayMs → 恢复
         if (st.pendingOff && (nowMono - st.offSinceMono) >= static_cast<int64_t>(r.offDelayMs)) {
             st.pendingOff  = false;
             st.inAlarmBand = false;
