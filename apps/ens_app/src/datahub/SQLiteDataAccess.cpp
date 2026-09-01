@@ -115,11 +115,13 @@ bool SQLiteDataAccess::openMonth(uint64_t timestamp) {
     if (!db.open()) {
         qWarning("SQLiteDataAccess: open failed: %s | err=%s",
                  qUtf8Printable(dbPath), qUtf8Printable(db.lastError().text()));
+        db = QSqlDatabase();   // 销毁局部句柄，再 remove（防 "still in use" 告警）
         QSqlDatabase::removeDatabase(connName);
         return false;
     }
     if (!applyPragmas(db)) {
         db.close();
+        db = QSqlDatabase();
         QSqlDatabase::removeDatabase(connName);
         return false;
     }
@@ -128,8 +130,8 @@ bool SQLiteDataAccess::openMonth(uint64_t timestamp) {
     m_connForPath.insert(dbPath, db);
     // 首次打开时建 1s 粒度表(其他粒度按需在 batchInsert 前 ensure)
     if (!ensureSchema(dbPath, HistoryGranularity::Gran1s)) {
-        m_connForPath.remove(dbPath);
-        db.close();
+        m_connForPath.remove(dbPath);   // 销毁容器拷贝
+        db = QSqlDatabase();            // 销毁局部句柄
         QSqlDatabase::removeDatabase(connName);
         return false;
     }
@@ -137,12 +139,18 @@ bool SQLiteDataAccess::openMonth(uint64_t timestamp) {
 }
 
 void SQLiteDataAccess::closeAll() {
+    // Qt 要求 removeDatabase 时该连接无任何 QSqlDatabase 实例存活（含隐式共享拷贝），
+    // 否则告警 "connection is still in use" → 先收集 connName 并销毁容器内拷贝，再 remove。
+    QStringList names;
+    names.reserve(m_connForPath.size());
     for (auto it = m_connForPath.begin(); it != m_connForPath.end(); ++it) {
-        const QString connName = it.value().connectionName();
         if (it.value().isOpen()) it.value().close();
-        QSqlDatabase::removeDatabase(connName);
+        names.push_back(it.value().connectionName());
     }
-    m_connForPath.clear();
+    m_connForPath.clear();   // 销毁全部 QSqlDatabase 实例（含隐式共享句柄）
+    for (const QString& n : names) {
+        QSqlDatabase::removeDatabase(n);
+    }
 }
 
 bool SQLiteDataAccess::ensureSchema(const QString& dbPath, HistoryGranularity gran) {
