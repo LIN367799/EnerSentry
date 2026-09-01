@@ -65,6 +65,8 @@ struct FaultOverride {
     uint16_t  reg       = 0;
     float     targetValue = 0.0f;   ///< 越限目标值（℃/V）
     float     rampRate    = 0.0f;   ///< ℃/s 或 V/s（ACTIVE 期上升 + RECOVERING 期回归）
+    float     recoverValue = 0.0f;  ///< 切片 15：RECOVERING 回归目标（0=归 0,与旧行为一致；
+                                    ///< drill RECOVER step 的 targetValue 即回归目标,如 overheat→35℃）
     int32_t   corruptMs   = 0;      ///< CrcError/Timeout 用：响应延迟/破坏毫秒
     int32_t   durationMs  = 0;      ///< ACTIVE 持续时长；0 = 永久 ACTIVE
 };
@@ -138,6 +140,9 @@ public:
     void toAborted() noexcept;
     void toIdle() noexcept;
 
+    /// 切片 15：设置 RECOVERING 回归目标（recover(h, recoverValue) 用）
+    void setRecoverTarget(float v) noexcept { m_recoverTarget = v; }
+
     /// 是否覆盖 (slave, reg)
     bool covers(uint8_t slave, uint16_t reg) const noexcept;
 
@@ -157,6 +162,7 @@ private:
     int64_t      m_activeSinceMs = 0;    ///< 进入 ACTIVE 时刻
     int64_t      m_recoverSinceMs = 0;   ///< 进入 RECOVERING 时刻
     float        m_currentValue = 0.0f;  ///< ACTIVE 期 = spec.targetValue；RECOVERING 期渐变
+    float        m_recoverTarget = 0.0f; ///< 切片 15：RECOVERING 回归目标（spec.recoverValue）
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,8 +189,9 @@ public:
     /// 触发新故障 session。返回 handle；INVALID_FAULT_HANDLE 表示失败（如 ID 已耗尽）
     FaultHandle trigger(const FaultRequest& req) noexcept;
 
-    /// ACTIVE → RECOVERING（自然到期也走这里，外部可主动调用）
-    bool recover(FaultHandle h) noexcept;
+    /// ACTIVE → RECOVERING（自然到期也走这里，外部可主动调用）。
+    /// recoverValue = RECOVERING 回归目标（切片 15；默认 0 = 与旧行为一致归零）
+    bool recover(FaultHandle h, float recoverValue = 0.0f) noexcept;
 
     /// 任意状态 → ABORTED
     bool abort(FaultHandle h) noexcept;

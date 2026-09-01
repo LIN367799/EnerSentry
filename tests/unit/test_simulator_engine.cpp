@@ -116,3 +116,21 @@ TEST_CASE("simulator_engine: injectFault basic call from caller thread returns n
     REQUIRE(engine.recoverFault(h));
     engine.stop();
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4) 点表路径缺失 → start 返回 false（noexcept 异常防御，切片 15 CLI 实测根因回归）
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("simulator_engine: start with missing pointtable returns false (no terminate)",
+          "[master][sim][simulator_engine][pointtable][tier2]") {
+    SimulatorEngine engine;
+    SimConfig cfg;
+    cfg.tickMs         = 100;
+    cfg.seed           = 0;
+    cfg.pointtablePath = "nonexistent_dir/pointtable.json";
+    cfg.tcp.enabled    = false;
+    cfg.rtu.enabled    = false;
+
+    // 必须优雅返 false，不 terminate / 不挂起
+    REQUIRE_FALSE(engine.start(cfg));
+    REQUIRE_FALSE(engine.isRunning());
+}

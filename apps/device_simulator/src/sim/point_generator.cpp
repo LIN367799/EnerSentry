@@ -24,6 +24,9 @@ DeviceKind inferKindFromName(const std::vector<SimPoint>& v) noexcept {
     return DeviceKind::Bms;
 }
 
+// 告警字点后缀（SIM-IMP §3.1 BMS 簇级寄存器 alarmWord 槽位;全量/样例点表通用）
+const std::string kAlarmWordSuffix("_AlarmWord");
+
 }  // namespace
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,17 +121,23 @@ void PointGenerator::generateTick() {
             // SIM-IMP §6.2:生成线程异常时该从站值保持上一帧
         }
 
-        // 故障叠加：遍历本从站所有 HoldingRegister 点,调 resolveOverride 覆盖 m_work
-        // （B7 范围:仅寄存器值覆盖;告警字置位延后到 B8）
+        // 故障叠加：遍历本从站全部点(Holding + Input),调 resolveOverride 覆盖 m_work。
+        // B7 范围:寄存器值覆盖; B8 加告警字置位; 切片 15 扩展 InputRegister(CellV 单体电压
+        // 在样例点表为 InputRegister,voltage_fault_drill 依赖)。
+        // 告警字语义修正(切片 15):每 tick 先清零再按当 tick 活跃故障置位 —— 只反映瞬时
+        // 活跃故障,RECOVERING 完成 / 显式 RECOVER 后自动归零(overheat_drill 70s 复位验收)。
         if (m_fi != nullptr) {
             const auto& v = m_pt->onSlave(slave);
+            m_work[slave].alarmWord = 0;
             for (const auto& p : v) {
-                if (p.regType != RegisterType::HoldingRegister) continue;
+                if (!p.enabled) continue;
+                if (p.regType != RegisterType::HoldingRegister &&
+                    p.regType != RegisterType::InputRegister) continue;
                 const FaultEffect eff = m_fi->resolveOverride(slave, p.registerAddr);
                 if (!eff.active) continue;
                 // dropLink 标志由 B8 IO 层消费,此处不写
                 if (eff.dropLink) continue;
-                // B8 告警字置位:OverTemp→bit0,CellVoltage(value>0 过压→bit1 / value<0 欠压→bit2)
+                // 告警字置位:OverTemp→bit0,CellVoltage(value>0 过压→bit1 / value<0 欠压→bit2)
                 if (eff.type == FaultType::OverTemp) {
                     m_work[slave].alarmWord |= (uint16_t(1) << 0);
                 } else if (eff.type == FaultType::CellVoltage) {
@@ -138,7 +147,26 @@ void PointGenerator::generateTick() {
                 const float scale = (p.scaleFactor != 0.0f) ? p.scaleFactor : 1.0f;
                 const float rawF  = (eff.value - p.offset) / scale;
                 const uint16_t raw = static_cast<uint16_t>(std::clamp(rawF, 0.0f, 65535.0f));
-                m_work[slave].setHolding(p.registerAddr, raw);
+                if (p.regType == RegisterType::InputRegister) {
+                    m_work[slave].setInput(p.registerAddr, raw);
+                } else {
+                    m_work[slave].setHolding(p.registerAddr, raw);
+                }
+            }
+        }
+
+        // B8 收尾(切片 15):alarmWord → holding[AlarmWord 槽位],IO 编码可见。
+        // registerAddr 按 pointName 后缀 "_AlarmWord" 从点表匹配(SIM-IMP §3.1 簇级槽位,
+        // 全量/样例布局通用,不硬码 0x08 相对偏移);HoldingRegister 且点存在才写。
+        {
+            const auto& v = m_pt->onSlave(slave);
+            for (const auto& p : v) {
+                if (!p.enabled || p.regType != RegisterType::HoldingRegister) continue;
+                const size_t pos = p.pointName.rfind(kAlarmWordSuffix);
+                if (pos == std::string::npos ||
+                    pos + kAlarmWordSuffix.size() != p.pointName.size()) continue;
+                m_work[slave].setHolding(p.registerAddr, m_work[slave].alarmWord);
+                break;
             }
         }
 

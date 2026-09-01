@@ -70,7 +70,7 @@ void OverrideTable::clearAll() noexcept {
 // ═════════════════════════════════════════════════════════════════════════════
 
 FaultSession::FaultSession(FaultHandle h, FaultOverride spec, int64_t startMonoMs) noexcept
-    : m_handle(h), m_spec(spec), m_startMonoMs(startMonoMs) {}
+    : m_handle(h), m_spec(spec), m_startMonoMs(startMonoMs), m_recoverTarget(spec.recoverValue) {}
 
 void FaultSession::toActive(int64_t nowMonoMs) noexcept {
     m_state = FaultState::ACTIVE;
@@ -81,6 +81,7 @@ void FaultSession::toActive(int64_t nowMonoMs) noexcept {
 void FaultSession::toRecovering() noexcept {
     m_state = FaultState::RECOVERING;
     m_recoverSinceMs = FaultInjector::nowMonoMs();
+    m_recoverTarget = m_spec.recoverValue;   // 切片 15：recover(h, rv) 会先 set 再转移
 }
 
 void FaultSession::toAborted() noexcept {
@@ -103,17 +104,19 @@ void FaultSession::tick(int64_t nowMonoMs) noexcept {
         }
         // durationMs == 0 表示永久 ACTIVE（外部必须显式 recover/abort）
     } else if (m_state == FaultState::RECOVERING) {
-        // 线性回归 targetValue → 0（baseline）按 rampRate * dtMs
+        // 线性回归 currentValue → m_recoverTarget（切片 15：目标可为 spec.recoverValue，
+        // drill RECOVER step 的 targetValue 即回归目标；默认 0 与旧行为一致）
         const int64_t dt = nowMonoMs - m_recoverSinceMs;
         if (dt <= 0) return;
         const float delta = m_spec.rampRate * (static_cast<float>(dt) / 1000.0f);
-        if (m_spec.targetValue >= 0.0f) {
-            m_currentValue = std::max(0.0f, m_currentValue - delta);
-        } else {
-            m_currentValue = std::min(0.0f, m_currentValue + delta);
+        const float target = m_recoverTarget;
+        if (m_currentValue > target) {
+            m_currentValue = std::max(target, m_currentValue - delta);
+        } else if (m_currentValue < target) {
+            m_currentValue = std::min(target, m_currentValue + delta);
         }
-        if (std::abs(m_currentValue) < kRecoverEpsilon) {
-            m_currentValue = 0.0f;
+        if (std::abs(m_currentValue - target) < kRecoverEpsilon) {
+            m_currentValue = target;
             toIdle();
         }
     }
@@ -211,12 +214,13 @@ FaultHandle FaultInjector::trigger(const FaultRequest& req) noexcept {
     return h;
 }
 
-bool FaultInjector::recover(FaultHandle h) noexcept {
+bool FaultInjector::recover(FaultHandle h, float recoverValue) noexcept {
     bool ok = false;
     {
         std::unique_lock<std::shared_mutex> lk(m_sessionsMtx);
         for (auto& s : m_sessions) {
             if (s.handle() == h && s.state() == FaultState::ACTIVE) {
+                s.setRecoverTarget(recoverValue);   // 切片 15：回归目标
                 s.toRecovering();
                 ok = true;
                 break;

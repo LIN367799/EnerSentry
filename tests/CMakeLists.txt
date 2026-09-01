@@ -33,6 +33,8 @@ add_executable(ens_tests
     unit/test_business_integration.cpp
     unit/test_fault_injector.cpp
     unit/test_simulator_engine.cpp
+    unit/test_scenario_script.cpp
+    unit/test_alarm_word_io.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -49,6 +51,7 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/point_generator.cpp
     ../apps/device_simulator/src/sim/FaultInjector.cpp
     ../apps/device_simulator/src/sim/SimulatorEngine.cpp
+    ../apps/device_simulator/src/sim/scenario_script.cpp
     ../apps/device_simulator/src/sim/modbus_dispatch.cpp
     ../apps/device_simulator/src/sim/modbus_slave_emulator.cpp
     ../apps/device_simulator/src/sim/modbus_slave.cpp
@@ -91,6 +94,13 @@ endif()
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data)
 file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data)
+# 切片 15 B9：drill 场景脚本复制到 test_data/scenarios/（test_scenario_script.cpp 用相对路径加载）
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data/scenarios)
+file(COPY
+     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/overheat_drill.json"
+     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/random_linkloss_stress.json"
+     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/voltage_fault_drill.json"
+     DESTINATION ${CMAKE_BINARY_DIR}/test_data/scenarios)
 
 # Qt SQL driver:Debug 模式需要 qsqlited.dll 在 plugins/sqldrivers/ 子目录
 # (在 CMake configure 时同步复制,避免手工操作;依赖 Qt 5.15 默认布局)

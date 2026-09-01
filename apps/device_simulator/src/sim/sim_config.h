@@ -53,6 +53,8 @@ struct SimConfig {
     uint32_t               seed         = 0;         // NFR-TEST-01 确定性
     std::vector<SlaveSpec> slaves;
     std::string            pointtablePath = "config/pointtable.json";
+    std::string            scenarioPath;            // 切片 15 B9：非空则 start 后自动加载并运行
+    std::string            exportDir;               // 切片 15 B9：sim_events.jsonl/sim_report.json 落盘目录
 
     /// 从 JSON 文件加载（兼容 SIM-IMP §3.2 schema）。
     /// 找不到文件或 schemaVersion 不匹配时,抛 std::runtime_error。

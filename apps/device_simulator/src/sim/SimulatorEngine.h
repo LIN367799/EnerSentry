@@ -34,6 +34,7 @@ class ModbusSlaveEmulator;
 class FaultInjector;
 class RegisterBank;
 class SimPointTable;
+class ScenarioScript;
 struct SimConfig;       // forward decl 必须与 sim_config.h 定义一致(struct),否则 ABI 不匹配(MSVC mangling U vs V)
 struct FaultRequest;
 
@@ -61,6 +62,20 @@ public:
     bool     recoverFault(uint32_t handle) noexcept;
     bool     abortFault(uint32_t handle) noexcept;
 
+    /// 场景脚本（B9 切片 15）：加载 / 运行 / 查询。
+    /// loadScenario 在 start 前后均可；start 时若 cfg.scenarioPath 非空自动加载。
+    bool loadScenario(const std::string& path) noexcept;
+    bool scenarioLoaded() const noexcept;
+    /// 是否仍在驱动场景（dataTickLoop 内 allFired 后置 false）
+    bool scenarioRunning() const noexcept;
+    /// 场景是否全部 step 已触发
+    bool scenarioAllFired() const noexcept;
+    /// 报告 / 事件流（落盘用，未结束场景返回当前快照）
+    std::string scenarioReportJson() const;
+    std::string scenarioEventsJsonl() const;
+    /// 场景名称（诊断）
+    std::string scenarioName() const;
+
     /// 诊断:DataTick 已经循环的次数（每调一次 generateTick 增 1）
     uint64_t tickCount() const noexcept;
 
@@ -76,6 +91,12 @@ private:
     std::unique_ptr<PointGenerator>        m_gen;
     std::unique_ptr<ModbusSlaveEmulator>   m_emu;
     std::unique_ptr<FaultInjector>         m_fi;
+    std::unique_ptr<ScenarioScript>        m_scenario;   // B9 切片 15
+
+    // 场景驱动状态（dataTickLoop 独占读写；查询经 m_cmdMtx）
+    std::string m_scenarioPath;     // start 时缓存 cfg.scenarioPath
+    bool        m_scenarioRunning = false;
+    std::string m_exportDir;
 
     // DataTick 线程
     std::thread       m_tickThread;
