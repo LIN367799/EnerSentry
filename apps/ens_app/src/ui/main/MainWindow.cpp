@@ -3,6 +3,7 @@
 #include "ui_MainWindow.h"
 
 #include "auth/SessionLockDialog.h"
+#include "charts/RealtimeChartWidget.h"
 #include "views/alarm_center_widget.h"
 #include "views/overview_widget.h"
 #include "views/placeholder_view.h"
@@ -98,10 +99,9 @@ void MainWindow::setupViews() {
     // 真实数据视图
     m_overview  = new OverviewWidget(m_bus, this);
     m_alarmView = new AlarmCenterWidget(m_alarm, this);
+    m_chart     = new RealtimeChartWidget(m_bus, this);
     ui->centralStack->addWidget(m_overview);   // 0 总览
-    // 1 实时曲线（切片 20 实装）
-    ui->centralStack->addWidget(new PlaceholderView(
-        QStringLiteral("实时曲线"), QStringLiteral("ENS-LLD-503 RealtimePlotWidget（QCustomPlot 30Hz + 降采样）属切片 20。"), this));
+    ui->centralStack->addWidget(m_chart);      // 1 实时曲线（切片 20：QCustomPlot 30Hz 批处理 + 降采样）
     ui->centralStack->addWidget(m_alarmView);  // 2 告警中心
     // 3 历史趋势
     ui->centralStack->addWidget(new PlaceholderView(

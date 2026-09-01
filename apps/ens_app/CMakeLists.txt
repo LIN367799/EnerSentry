@@ -120,6 +120,9 @@ add_library(ens_ui STATIC
     src/ui/auth/SessionLockDialog.cpp
     src/ui/main/MainWindow.ui
     src/ui/main/MainWindow.cpp
+    src/ui/charts/RenderDownsampler.cpp
+    src/ui/charts/RealtimePlotWidget.cpp
+    src/ui/charts/RealtimeChartWidget.cpp
     src/ui/views/OverviewWidget.ui
     src/ui/views/overview_widget.cpp
     src/ui/views/AlarmCenterWidget.ui

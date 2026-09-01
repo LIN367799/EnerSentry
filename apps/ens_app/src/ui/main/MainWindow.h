@@ -29,6 +29,7 @@ namespace ens::ui {
 
 class OverviewWidget;
 class AlarmCenterWidget;
+class RealtimeChartWidget;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -64,8 +65,9 @@ private:
     ens::business::AuthManager* m_auth;
     QString m_linkLabel;
 
-    OverviewWidget*    m_overview  = nullptr;
-    AlarmCenterWidget* m_alarmView = nullptr;
+    OverviewWidget*     m_overview  = nullptr;
+    AlarmCenterWidget*  m_alarmView = nullptr;
+    RealtimeChartWidget* m_chart    = nullptr;
 
     QLabel* m_lblLink  = nullptr;
     QLabel* m_lblClock = nullptr;

@@ -30,6 +30,7 @@ add_executable(ens_tests
     unit/test_business_state_machine.cpp
     unit/test_alarm_engine.cpp
     unit/test_auth_manager.cpp
+    unit/test_render_downsampler.cpp
     unit/test_sbo_state_machine.cpp
     unit/test_business_integration.cpp
     unit/test_fault_injector.cpp
@@ -68,7 +69,7 @@ target_include_directories(ens_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ../apps/device_simulator/src
     ../apps/ens_app/src)
-target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub ens::business Catch2::Catch2)
+target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub ens::business ens::ui Catch2::Catch2)
 # B3 起原生 socket（winsock2）：用 find_library 给完整路径 + 显式 LIBPATH(避免依赖
 #  PowerShell Enter-VsDevShell 的 LIB env 在 ninja→cmd spawn 链中丢失)
 if(WIN32)
