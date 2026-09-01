@@ -87,7 +87,7 @@ public:
     explicit MainWindow(const UiDeps& deps, QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    /// RBAC 裁剪入口（V1.6 接入 AuthManager::checkPermission；当前空实现占位）
+    /// RBAC 裁剪入口（切片 26 落地：Operator 禁 SBO/Config；Engineer/Admin 全量）
     void applyPermissionFilter();
 
 public slots:
@@ -96,6 +96,7 @@ public slots:
 
 protected:
     void closeEvent(QCloseEvent* e) override;
+    bool eventFilter(QObject* obj, QEvent* e) override;   // 切片 26：全局活动检测（FR-AUTH-05）
 
 private slots:
     void switchView(int index);

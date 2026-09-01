@@ -18,6 +18,8 @@
 
 #include <QCloseEvent>
 #include <QDateTime>
+#include <QEvent>
+#include <QGuiApplication>
 #include <QIcon>
 #include <QMessageBox>
 #include <QSettings>
@@ -69,6 +71,8 @@ MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
     m_statusTimer.start();
 
     restoreWindowState();   // QSettings：几何 + 最后视图（切片 21）
+    applyPermissionFilter();   // 切片 26：RBAC 视图裁剪（restore 可能切到越权视图，此处置底）
+    qApp->installEventFilter(this);   // 切片 26：全局活动检测 → touchActivity（FR-AUTH-05）
     updateIdentityLabel();
 }
 
@@ -179,8 +183,32 @@ void MainWindow::updateIdentityLabel() {
 }
 
 void MainWindow::applyPermissionFilter() {
-    // V1.6：按 AuthManager::currentRole() 裁剪 menuFile/menuTools 项
-    // （Admin 全量 / Engineer 控制+配置 / Operator 只读）。当前空实现占位。
+    if (!m_deps.auth) return;
+    // Operator：只读（禁 SBO 控制 / 参数配置）；Engineer/Admin 全量
+    const bool isOperator = (m_deps.auth->currentRole() == ens::business::UserRole::Operator);
+    ui->actViewSbo->setEnabled(!isOperator);
+    ui->actViewConfig->setEnabled(!isOperator);
+    // 越权视图兜底：恢复/登录时若停在禁页 → 回总览
+    const int cur = ui->centralStack->currentIndex();
+    if (isOperator && (cur == 4 || cur == 6)) {
+        switchView(0);
+    }
+}
+
+bool MainWindow::eventFilter(QObject* obj, QEvent* e) {
+    // 全局活动检测：鼠标/键盘/滚轮任意交互刷新空闲计时（FR-AUTH-05 真正生效）
+    if (m_deps.auth && m_deps.auth->isLoggedIn()) {
+        switch (e->type()) {
+            case QEvent::MouseButtonPress:
+            case QEvent::KeyPress:
+            case QEvent::Wheel:
+                m_deps.auth->touchActivity();
+                break;
+            default:
+                break;
+        }
+    }
+    return QMainWindow::eventFilter(obj, e);
 }
 
 void MainWindow::setLinkConnected(bool connected) {

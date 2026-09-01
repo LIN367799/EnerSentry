@@ -142,11 +142,23 @@ int main(int argc, char* argv[]) {
     deps.alarm = es.alarmEngine();
     deps.auth  = &auth;
     deps.sbo   = es.sboStateMachine();
-    deps.sboSelect = [&es](const ens::business::SboSelectRequest& req) {
-        return es.submitSboSelect(req.slaveId, req.registerAddr, req.value, req.emergency);
+    // 切片 26：SBO 回调加权限兜底（ScopedAuthGuard 校验 + 审计；即便 UI 裁剪失效也不越权）
+    deps.sboSelect = [&es, &auth](const ens::business::SboSelectRequest& req) {
+        ens::business::ScopedAuthGuard g(&auth, ens::business::perms::kSboSelect,
+                                         QStringLiteral("sbo.select"));
+        return g.granted() &&
+            es.submitSboSelect(req.slaveId, req.registerAddr, req.value, req.emergency);
     };
-    deps.sboOperate = [&es](const QString& seq) { return es.submitSboOperate(seq); };
-    deps.sboCancel  = [&es](const QString& seq) { return es.submitSboCancel(seq); };
+    deps.sboOperate = [&es, &auth](const QString& seq) {
+        ens::business::ScopedAuthGuard g(&auth, ens::business::perms::kSboOperate,
+                                         QStringLiteral("sbo.operate"));
+        return g.granted() && es.submitSboOperate(seq);
+    };
+    deps.sboCancel  = [&es, &auth](const QString& seq) {
+        ens::business::ScopedAuthGuard g(&auth, ens::business::perms::kSboCancel,
+                                         QStringLiteral("sbo.cancel"));
+        return g.granted() && es.submitSboCancel(seq);
+    };
     // 切片 23：Diag/Config 数据源
     deps.channel = es.channel();
     deps.pointTable = es.pointTable();
