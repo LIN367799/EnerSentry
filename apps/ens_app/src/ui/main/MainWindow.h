@@ -66,6 +66,10 @@ public:
     /// RBAC 裁剪入口（V1.6 接入 AuthManager::checkPermission；当前空实现占位）
     void applyPermissionFilter();
 
+public slots:
+    /// 链路连接状态（切片 22，5C 联调）：main.cpp connect EnerSentryApp::connected/disconnected
+    void setLinkConnected(bool connected);
+
 protected:
     void closeEvent(QCloseEvent* e) override;
 

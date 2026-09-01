@@ -363,4 +363,13 @@ TEST_CASE("main_loop: SBO armed clears on link loss and reconnects after",
     while (t.elapsed() < 10000 && !rig.es->isConnected()) rig.pump(50);
     INFO("reconnect elapsedMs=" << t.elapsed() << " connected=" << rig.es->isConnected());
     REQUIRE(rig.es->isConnected());
+
+    // ── 切片 22（5C）：重连后数据流恢复（sampleCount 继续增长，非停滞）──
+    // 注：CommLoss 残留期链路可能仍有抖动，poll 恢复需时间 → 轮询等待而非固定窗口
+    const int samplesAtReconnect = rig.es->sampleCount();
+    t.restart();
+    while (t.elapsed() < 5000 && rig.es->sampleCount() == samplesAtReconnect) rig.pump(50);
+    INFO("resume elapsedMs=" << t.elapsed()
+         << " samples=" << rig.es->sampleCount() << " base=" << samplesAtReconnect);
+    REQUIRE(rig.es->sampleCount() > samplesAtReconnect);
 }

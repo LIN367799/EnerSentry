@@ -180,6 +180,17 @@ void MainWindow::applyPermissionFilter() {
     // （Admin 全量 / Engineer 控制+配置 / Operator 只读）。当前空实现占位。
 }
 
+void MainWindow::setLinkConnected(bool connected) {
+    // 链路状态：已连接绿色 / 已断开红色（语义色，UI-02 系）
+    if (connected) {
+        m_lblLink->setText(QStringLiteral("● 已连接 %1").arg(m_deps.linkLabel));
+        m_lblLink->setStyleSheet(QStringLiteral("color: #66bb6a;"));
+    } else {
+        m_lblLink->setText(QStringLiteral("● 已断开 %1").arg(m_deps.linkLabel));
+        m_lblLink->setStyleSheet(QStringLiteral("color: #e94560;"));
+    }
+}
+
 void MainWindow::restoreWindowState() {
     QSettings s(QStringLiteral("EnerSentry"), QStringLiteral("ens_app"));
     const QByteArray geo = s.value(QStringLiteral("main/geometry")).toByteArray();

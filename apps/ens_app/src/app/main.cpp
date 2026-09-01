@@ -150,6 +150,14 @@ int main(int argc, char* argv[]) {
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
 
     ens::ui::MainWindow w(deps);
+    // 链路状态 → 状态栏（切片 22，5C 联调：断链红/恢复绿）
+    QObject::connect(&es, &ens::app::EnerSentryApp::connected, &w, [&w] {
+        w.setLinkConnected(true);
+    });
+    QObject::connect(&es, &ens::app::EnerSentryApp::disconnected, &w, [&w] {
+        w.setLinkConnected(false);
+    });
+    w.setLinkConnected(es.isConnected());
     w.show();
 
     const int rc = app.exec();
