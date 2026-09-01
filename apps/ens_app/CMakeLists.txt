@@ -130,6 +130,10 @@ add_library(ens_ui STATIC
     src/ui/views/overview_widget.cpp
     src/ui/views/AlarmCenterWidget.ui
     src/ui/views/alarm_center_widget.cpp
+    src/ui/views/DiagWidget.ui
+    src/ui/views/DiagWidget.cpp
+    src/ui/views/ConfigWidget.ui
+    src/ui/views/ConfigWidget.cpp
     src/ui/views/placeholder_view.cpp)
 add_library(ens::ui ALIAS ens_ui)
 target_include_directories(ens_ui PUBLIC

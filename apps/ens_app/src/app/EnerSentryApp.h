@@ -146,6 +146,10 @@ public:
     business::AlarmEngine* alarmEngine() noexcept  { return &m_alarm; }
     // 切片 21：SBO 状态机（UI 绑定 sboStateChanged；下发仍经 submitSboXxx 公开方法）
     business::SboStateMachine* sboStateMachine() noexcept { return &m_sbo; }
+    // 切片 23：Diag/Config 视图数据源（只读；ens::ui 不触碰 app 层头）
+    channel::TcpChannel* channel() noexcept { return &m_channel; }
+    const std::shared_ptr<protocol::PointTable>& pointTable() const noexcept { return m_pt; }
+    QString alarmRulesPath() const { return m_opts.alarmRulesPath; }
 
 signals:
     void connected();

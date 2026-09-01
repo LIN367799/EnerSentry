@@ -17,6 +17,15 @@
 #include <QTimer>
 
 #include <functional>
+#include <memory>
+
+namespace ens::channel {
+class IChannel;
+}  // namespace ens::channel
+
+namespace ens::protocol {
+class PointTable;
+}  // namespace ens::protocol
 
 namespace ens::business {
 class AlarmEngine;
@@ -39,6 +48,8 @@ class OverviewWidget;
 class AlarmCenterWidget;
 class RealtimeChartWidget;
 class SBOControlWidget;
+class DiagWidget;
+class ConfigWidget;
 
 /// 主窗口依赖聚合（main.cpp 一次构造传入；ens::ui 不触碰 app 层）
 struct UiDeps {
@@ -53,6 +64,15 @@ struct UiDeps {
     SubmitSelectFn  sboSelect;
     SubmitOperateFn sboOperate;
     SubmitCancelFn  sboCancel;
+
+    // 切片 23：Diag/Config 数据源
+    ens::channel::IChannel* channel = nullptr;
+    std::shared_ptr<protocol::PointTable> pointTable;
+    QString alarmRulesPath;
+    int     alarmRuleCount = 0;
+    QString host;
+    quint16 port = 0;
+    int     pollMs = 0;
 
     QString linkLabel;      // 状态栏：连接标识
 };
@@ -96,6 +116,8 @@ private:
     AlarmCenterWidget*  m_alarmView = nullptr;
     RealtimeChartWidget* m_chart    = nullptr;
     SBOControlWidget*   m_sboView   = nullptr;
+    DiagWidget*         m_diagView  = nullptr;
+    ConfigWidget*       m_configView = nullptr;
 
     QLabel* m_lblLink  = nullptr;
     QLabel* m_lblClock = nullptr;

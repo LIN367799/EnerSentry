@@ -147,6 +147,14 @@ int main(int argc, char* argv[]) {
     };
     deps.sboOperate = [&es](const QString& seq) { return es.submitSboOperate(seq); };
     deps.sboCancel  = [&es](const QString& seq) { return es.submitSboCancel(seq); };
+    // 切片 23：Diag/Config 数据源
+    deps.channel = es.channel();
+    deps.pointTable = es.pointTable();
+    deps.alarmRulesPath = es.alarmRulesPath();
+    deps.alarmRuleCount = static_cast<int>(es.alarmEngine()->ruleCount());
+    deps.host = opts.host;
+    deps.port = opts.port;
+    deps.pollMs = opts.pollIntervalMs;
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
 
     ens::ui::MainWindow w(deps);

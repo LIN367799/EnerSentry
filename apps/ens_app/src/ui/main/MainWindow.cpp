@@ -5,12 +5,15 @@
 #include "auth/SessionLockDialog.h"
 #include "charts/RealtimeChartWidget.h"
 #include "controls/SBOControlWidget.h"
+#include "views/ConfigWidget.h"
+#include "views/DiagWidget.h"
 #include "views/alarm_center_widget.h"
 #include "views/overview_widget.h"
 #include "views/placeholder_view.h"
 
 #include "AlarmEngine.h"
 #include "AuthManager.h"
+#include "PointTable.h"   // UiDeps::pointTable shared_ptr 析构需完整类型
 
 #include <QCloseEvent>
 #include <QDateTime>
@@ -100,18 +103,18 @@ void MainWindow::setupViews() {
     m_chart     = new RealtimeChartWidget(m_deps.bus, this);
     m_sboView   = new SBOControlWidget(m_deps.sbo, m_deps.sboSelect, m_deps.sboOperate,
                                        m_deps.sboCancel, this);
+    m_diagView  = new DiagWidget(m_deps.channel, this);
+    m_configView = new ConfigWidget(m_deps.pointTable, m_deps.alarmRulesPath,
+                                    m_deps.alarmRuleCount, m_deps.host, m_deps.port,
+                                    m_deps.pollMs, this);
     ui->centralStack->addWidget(m_overview);   // 0 总览
     ui->centralStack->addWidget(m_chart);      // 1 实时曲线（切片 20）
     ui->centralStack->addWidget(m_alarmView);  // 2 告警中心
-    // 3 历史趋势
+    // 3 历史趋势（切片 24：IDataAccess 查询层）
     ui->centralStack->addWidget(new PlaceholderView(
-        QStringLiteral("历史趋势"), QStringLiteral("ENS-LLD-505 HistoryTrendWidget（IDataAccess 历史查询）属后续切片。"), this));
-    // 4 参数配置
-    ui->centralStack->addWidget(new PlaceholderView(
-        QStringLiteral("参数配置"), QStringLiteral("ENS-LLD-506 ConfigWidget（点表/阈值/链路分页）属后续切片。"), this));
-    // 5 通信诊断
-    ui->centralStack->addWidget(new PlaceholderView(
-        QStringLiteral("通信诊断"), QStringLiteral("ENS-LLD-507 DiagWidget（IChannel::getStats 链路质量）属后续切片。"), this));
+        QStringLiteral("历史趋势"), QStringLiteral("ENS-LLD-505 HistoryTrendWidget（IDataAccess 历史查询）属切片 24。"), this));
+    ui->centralStack->addWidget(m_configView); // 4 参数配置（切片 23）
+    ui->centralStack->addWidget(m_diagView);   // 5 通信诊断（切片 23）
     ui->centralStack->addWidget(m_sboView);    // 6 SBO 控制（切片 21）
 }
 
