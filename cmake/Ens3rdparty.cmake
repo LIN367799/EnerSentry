@@ -7,7 +7,8 @@ add_library(ens_3rdparty INTERFACE)
 add_library(ens::3rdparty ALIAS ens_3rdparty)
 
 # Qt5：独立套件，由 CMAKE_PREFIX_PATH 解析
-find_package(Qt5 COMPONENTS Core Gui Widgets PrintSupport SerialPort Network Sql REQUIRED)
+# Svg：Phase 4 B10/5A 工具栏/按钮图标经 QIcon 加载 resources.qrc 内 SVG 必需（qt5svg 运行时插件）
+find_package(Qt5 COMPONENTS Core Gui Widgets PrintSupport SerialPort Network Sql Svg REQUIRED)
 
 # 轻量库：vcpkg 经 CMAKE_TOOLCHAIN_FILE 注入查找路径
 find_package(Catch2 CONFIG REQUIRED)        # Catch2::Catch2(不带 main) + Catch2::Catch2WithMain
@@ -26,6 +27,7 @@ target_link_libraries(ens_3rdparty INTERFACE
     Qt5::SerialPort
     Qt5::Network
     Qt5::Sql
+    Qt5::Svg
     qcustomplot::qcustomplot
     # Catch2 不在 INTERFACE 中强制链入 — 调用方按需选 Catch2 / Catch2WithMain
     nlohmann_json::nlohmann_json

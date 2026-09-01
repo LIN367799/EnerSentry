@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>FaultPanel</class>
+ <widget class="QWidget" name="FaultPanel">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>故障注入</string>
+  </property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <item>
+    <widget class="QGroupBox" name="grpFault">
+     <property name="title">
+      <string>故障注入（FR-SIM-05a~05e）</string>
+     </property>
+     <layout class="QGridLayout" name="faultGrid">
+      <item row="0" column="0">
+       <widget class="QLabel" name="lblType">
+        <property name="text">
+         <string>故障类型</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboType">
+        <item>
+         <property name="text">
+          <string>过温 OverTemp</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>单体电压 CellVoltage</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>通信中断 CommLoss</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>CRC 破坏 CrcError</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>超时 Timeout</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="0" column="2">
+       <widget class="QLabel" name="lblScope">
+        <property name="text">
+         <string>作用域</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QComboBox" name="comboScope">
+        <item>
+         <property name="text">
+          <string>全局 ALL</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>从站 SLAVE</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>测点 POINT</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="lblSlave">
+        <property name="text">
+         <string>从站 ID</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="spinSlave">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>23</number>
+        </property>
+        <property name="value">
+         <number>1</number>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="QLabel" name="lblReg">
+        <property name="text">
+         <string>寄存器地址</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="3">
+       <widget class="QSpinBox" name="spinReg">
+        <property name="maximum">
+         <number>65535</number>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="lblTarget">
+        <property name="text">
+         <string>目标值</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QDoubleSpinBox" name="spinTarget">
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="minimum">
+         <double>-10000.0</double>
+        </property>
+        <property name="maximum">
+         <double>10000.0</double>
+        </property>
+        <property name="value">
+         <double>65.0</double>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="2">
+       <widget class="QLabel" name="lblRamp">
+        <property name="text">
+         <string>速率/秒</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="3">
+       <widget class="QDoubleSpinBox" name="spinRamp">
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <double>100000.0</double>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="lblDuration">
+        <property name="text">
+         <string>持续(ms)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QSpinBox" name="spinDuration">
+        <property name="maximum">
+         <number>3600000</number>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="2">
+       <widget class="QLabel" name="lblMode">
+        <property name="text">
+         <string>触发模式</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="3">
+       <widget class="QComboBox" name="comboMode">
+        <item>
+         <property name="text">
+          <string>单次</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>周期</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>随机</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="lblInterval">
+        <property name="text">
+         <string>周期(ms)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QSpinBox" name="spinInterval">
+        <property name="minimum">
+         <number>200</number>
+        </property>
+        <property name="maximum">
+         <number>600000</number>
+        </property>
+        <property name="value">
+         <number>2000</number>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="2" colspan="2">
+       <layout class="QHBoxLayout" name="btnLayout">
+        <item>
+         <widget class="QPushButton" name="btnInject">
+          <property name="text">
+           <string>注入故障</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnRecoverAll">
+          <property name="text">
+           <string>全部恢复</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="btnSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lblStatus">
+     <property name="text">
+      <string>就绪</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="rootSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

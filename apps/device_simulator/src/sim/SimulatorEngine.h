@@ -85,6 +85,10 @@ public:
     /// 诊断（切片 17）：暴露 RCU 寄存器库（测试/复现用；DevGuide §4B 骨架定义）
     RegisterBank* bank() noexcept { return m_bank.get(); }
 
+    /// 只读点表访问（切片 18 B10）：GUI RegisterView 需要 pointName/regType/scaleFactor 显示
+    /// 工程值。返回与 PointGenerator 共享的同一实例，仅 const 读。
+    const SimPointTable* pointTable() const noexcept { return m_pt.get(); }
+
 private:
     void dataTickLoop() noexcept;  // DataTick 线程入口
 
