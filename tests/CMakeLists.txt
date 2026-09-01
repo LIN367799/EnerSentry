@@ -35,6 +35,7 @@ add_executable(ens_tests
     unit/test_simulator_engine.cpp
     unit/test_scenario_script.cpp
     unit/test_alarm_word_io.cpp
+    unit/test_alarm_rule_loader.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -101,6 +102,9 @@ file(COPY
      "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/random_linkloss_stress.json"
      "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/voltage_fault_drill.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data/scenarios)
+# 切片 16：告警规则 sample 复制到 test_data/（test_alarm_rule_loader / test_main_loop 用）
+file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/alarm_rules_sample.json"
+     DESTINATION ${CMAKE_BINARY_DIR}/test_data)
 
 # Qt SQL driver:Debug 模式需要 qsqlited.dll 在 plugins/sqldrivers/ 子目录
 # (在 CMake configure 时同步复制,避免手工操作;依赖 Qt 5.15 默认布局)

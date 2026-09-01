@@ -34,6 +34,13 @@
 #include "L1SnapshotStore.h"
 #include "DataBus.h"
 #include "AlarmEngine.h"
+#include "AlarmRuleLoader.h"
+#include "BlackBoxManager.h"
+#include "DownSampler.h"
+#include "SQLiteDataAccess.h"
+#include "L2HistoryStore.h"
+#include "DeviceSboGuard.h"
+#include "SboStateMachine.h"
 
 #include <QAtomicInt>
 #include <QObject>
@@ -97,6 +104,11 @@ public:
         QString pointTablePath;      // 与测试台共享的同一点表 JSON
         int     pollIntervalMs  = 100;
         int     runSeconds      = 0;     // >0: 到时自动 quit（CLI 演示 / 集成测试）
+        // 切片 16（4.3.4 Track A 接线）：
+        QString alarmRulesPath;      // 告警规则 JSON（缺省不加载规则）
+        QString dataDir;             // 月库根目录（缺省禁用落库）
+        QString blackboxDir;         // 黑匣子 mmap 目录（缺省禁用 mmap,仅计数）
+        QString sboCmd;              // 一次性 SBO 注入："select:slave:reg:value[:e]" / "operate" / "cancel"
     };
 
     explicit EnerSentryApp(const Options& opts, QObject* parent = nullptr);
@@ -114,6 +126,21 @@ public:
     int  sampleCount() const noexcept { return m_sampleCount.loadAcquire(); }
     bool isConnected() const noexcept { return m_connected; }
 
+    // ── 切片 16：SBO 控制流（Tier 3 集成测试 / CLI --cmd 注入）──
+    /// Select：@return true 状态机接受
+    bool submitSboSelect(uint32_t slaveId, uint32_t registerAddr, uint16_t value,
+                         bool emergency = false);
+    /// Operate 二次确认：seq 空则用当前 sequenceId
+    bool submitSboOperate(const QString& sequenceId = QString());
+    bool submitSboCancel(const QString& sequenceId = QString());
+    QString currentSboSequenceId() const { return m_sbo.currentSequenceId(); }
+    business::SBOState sboState() const { return m_sbo.currentState(); }
+
+    // ── 切片 16：黑匣子 / 月库诊断 ──
+    uint32_t blackboxTriggerCount() const { return m_bbx.criticalTriggerCount(); }
+    size_t   historyPendingCount() const { return m_l2.pendingCount(); }
+    uint32_t alarmCount() const { return m_alarm.activeAlarmCount(); }
+
 signals:
     void connected();
     void disconnected();
@@ -124,21 +151,34 @@ signals:
 private slots:
     void onChannelConnectionChanged(bool isConnected);
     void onConsumeTick();   // 主线程节拍：从 SampleBridge 取 Sample → L1/DataBus/AlarmEngine
+    void onFlushTick();     // 切片 16：月库周期 flush（1s）
 
 private:
+    /// 解析 --sbo-cmd 并一次性注入（start 后 800ms，等链路连接）
+    void scheduleSboCmd();
+    /// SboCommand → FC06 ModbusRequest 跨线程下发
+    void dispatchSboCommand(const business::SboCommand& cmd);
+
     Options                  m_opts;
     bool                     m_started  = false;
     bool                     m_connected = false;
     QAtomicInt               m_sampleCount{0};
     SampleBridge             m_bridge;        // worker 写 → 主线程消费
 
-    // ── 主线程对象 ──
+    // ── 主线程对象（声明序 = 依赖序：m_l1 先于 m_bbx, m_dal 先于 m_l2）──
     channel::TcpChannel      m_channel;
     business::AlarmEngine    m_alarm;
     datahub::L1SnapshotStore m_l1;
     datahub::DataBus         m_bus;
     SampleSink               m_sink;
+    datahub::BlackBoxManager m_bbx;          // &m_l1
+    datahub::SQLiteDataAccess m_dal;         // dataRootDir = opts.dataDir
+    datahub::DownSampler     m_ds;
+    datahub::L2HistoryStore  m_l2;           // &m_dal
+    business::DeviceSboGuard m_sboGuard;
+    business::SboStateMachine m_sbo;         // setGuard(&m_sboGuard) 在 start()
     QTimer                   m_consumeTimer;  // 主线程 50ms 消费节拍
+    QTimer                   m_flushTimer;    // 主线程 1s 月库 flush
 
     // ── worker 线程对象（start() 时 moveToThread；声明序保证构造依赖）──
     QThread                  m_workerThread;

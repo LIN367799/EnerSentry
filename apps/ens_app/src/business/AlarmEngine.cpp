@@ -258,7 +258,7 @@ void AlarmEngine::raiseAlarm(uint32_t pid, const AlarmRule& r, float value, int6
         // 风暴模式下 Critical 仍走实时路径（不合并）
         if (r.level == AlarmLevel::Critical) {
             emit alarmTriggered(evt);
-            emit blackBoxRequested(pid, evt.triggerTime);
+            emit blackBoxRequested(pid, evt.triggerTime, r.level);
         }
         return;
     }
@@ -266,7 +266,7 @@ void AlarmEngine::raiseAlarm(uint32_t pid, const AlarmRule& r, float value, int6
     // 正常路径
     emit alarmTriggered(evt);
     if (r.level == AlarmLevel::Critical) {
-        emit blackBoxRequested(pid, evt.triggerTime);
+        emit blackBoxRequested(pid, evt.triggerTime, r.level);
     }
 }
 

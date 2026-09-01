@@ -35,11 +35,24 @@ int main(int argc, char* argv[]) {
     QCommandLineOption pollOpt("poll-ms", "poll interval in ms", "ms", "100");
     QCommandLineOption runOpt("run-seconds",
                               "auto quit after N seconds (0 = run forever)", "sec", "0");
+    QCommandLineOption rulesOpt("alarm-rules",
+                                "alarm rules JSON path (empty = no rules)", "path");
+    QCommandLineOption dataOpt("data-dir",
+                               "monthly history DB root dir (empty = no persistence)", "dir");
+    QCommandLineOption bboxOpt("blackbox-dir",
+                               "blackbox critical mmap dir (empty = counting only)", "dir");
+    QCommandLineOption sboOpt("cmd",
+                              "one-shot SBO cmd: select:slave:reg:value[:e] | operate | cancel",
+                              "cmd");
     parser.addOption(hostOpt);
     parser.addOption(portOpt);
     parser.addOption(ptOpt);
     parser.addOption(pollOpt);
     parser.addOption(runOpt);
+    parser.addOption(rulesOpt);
+    parser.addOption(dataOpt);
+    parser.addOption(bboxOpt);
+    parser.addOption(sboOpt);
     parser.process(app);
 
     ens::app::EnerSentryApp::Options opts;
@@ -48,6 +61,10 @@ int main(int argc, char* argv[]) {
     opts.pointTablePath  = parser.value(ptOpt);
     opts.pollIntervalMs  = parser.value(pollOpt).toInt();
     opts.runSeconds      = parser.value(runOpt).toInt();
+    opts.alarmRulesPath  = parser.value(rulesOpt);
+    opts.dataDir         = parser.value(dataOpt);
+    opts.blackboxDir     = parser.value(bboxOpt);
+    opts.sboCmd          = parser.value(sboOpt);
     if (opts.pointTablePath.isEmpty()) {
         std::fprintf(stderr, "[ENS] usage: --point-table <json> is required\n");
         return 2;

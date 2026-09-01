@@ -86,7 +86,7 @@ TEST_CASE("alarm_engine: Critical level emits blackBoxRequested signal",
     QObject::connect(&eng, &AlarmEngine::alarmTriggered,
                      [&triggeredN](const ens::business::AlarmEvent&) { ++triggeredN; });
     QObject::connect(&eng, &AlarmEngine::blackBoxRequested,
-                     [&blackboxN](uint32_t, uint64_t) { ++blackboxN; });
+                     [&blackboxN](uint32_t, uint64_t, ens::business::AlarmLevel) { ++blackboxN; });
 
     eng.onDataUpdated(42, 1000, 60.0f);
     sleepMs(100);
@@ -99,7 +99,7 @@ TEST_CASE("alarm_engine: Critical level emits blackBoxRequested signal",
     // 恢复不应再发
     int blackboxN2 = 0;
     auto conn = QObject::connect(&eng, &AlarmEngine::blackBoxRequested,
-                                 [&blackboxN2](uint32_t, uint64_t) { ++blackboxN2; });
+                                 [&blackboxN2](uint32_t, uint64_t, ens::business::AlarmLevel) { ++blackboxN2; });
     (void)conn;
     eng.onDataUpdated(42, 1200, 30.0f);
     sleepMs(100);
@@ -160,7 +160,7 @@ TEST_CASE("alarm_engine: storm suppression drops overflow + keeps Critical real-
 
     int blackboxN = 0;
     QObject::connect(&eng, &AlarmEngine::blackBoxRequested,
-                     [&blackboxN](uint32_t, uint64_t) { ++blackboxN; });
+                     [&blackboxN](uint32_t, uint64_t, ens::business::AlarmLevel) { ++blackboxN; });
 
     // 灌 5000 条
     const uint64_t ts0 = 2000;

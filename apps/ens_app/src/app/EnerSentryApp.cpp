@@ -15,6 +15,7 @@
 
 #include <QDateTime>
 #include <QMetaObject>
+#include <QStringList>
 #include <QTimer>
 
 #include <algorithm>
@@ -241,6 +242,9 @@ EnerSentryApp::EnerSentryApp(const Options& opts, QObject* parent)
       m_channel(nullptr),
       m_alarm(this),
       m_sink(m_alarm, m_sampleCount),
+      m_bbx(&m_l1),                 // 切片 16：黑匣子依赖 L1 快照
+      m_dal(opts.dataDir),          // 月库根目录（空 = 不落盘）
+      m_l2(&m_dal),
       m_engine(&m_channel, protocol::Transport::Tcp) {}
 
 EnerSentryApp::~EnerSentryApp() {
@@ -280,6 +284,25 @@ bool EnerSentryApp::start() {
         }
     }
 
+    // 2.5) 告警规则加载（opts.alarmRulesPath 非空；失败仅告警不阻断运行）
+    if (!m_opts.alarmRulesPath.isEmpty()) {
+        std::vector<business::AlarmRule> rules;
+        std::string err;
+        // ⚠ 中文路径走宽字符 path（PointTable::loadFromJsonFile 同策略，绕 ANSI 坑）
+        const int n = business::AlarmRuleLoader::loadFromFile(
+            std::filesystem::path(m_opts.alarmRulesPath.toStdWString()),
+            *m_pt, rules, &err);
+        if (n < 0) {
+            std::fprintf(stderr, "[ENS] alarm rules load failed: %s\n", err.c_str());
+        } else {
+            m_alarm.loadRules(rules);
+            std::printf("[ENS] alarm rules loaded: %d\n", n);
+            if (!err.empty()) {
+                std::fprintf(stderr, "[ENS] alarm rules issues: %s\n", err.c_str());
+            }
+        }
+    }
+
     // 3) worker 线程 + 对象迁移
     m_workerThread.setObjectName("ens-io-worker");
     m_workerThread.start();
@@ -314,6 +337,18 @@ bool EnerSentryApp::start() {
         emit alarmRaised(QStringLiteral("ALARM pid=%1 level=%2")
                          .arg(ev.pointId).arg(static_cast<int>(ev.level)));
     });
+    // 切片 16：黑匣子接线（Critical → triggerBlackBox；依赖倒置信号已就绪）
+    connect(&m_alarm, &business::AlarmEngine::blackBoxRequested,
+            this, [this](uint32_t pid, uint64_t ts, business::AlarmLevel lvl) {
+        // ⚠ business::AlarmLevel 与 datahub::AlarmLevel 为不同命名空间同名枚举，
+        // 值域一致（Info/Warning/Critical），需显式转换（C2664 实测坑）
+        m_bbx.triggerBlackBox(pid, ts, static_cast<datahub::AlarmLevel>(lvl));
+    });
+    // 切片 16：SBO commandReady → FC06 跨线程下发（worker 线程 ModbusEngine）
+    connect(&m_sbo, &business::SboStateMachine::commandReady,
+            this, [this](const business::SboCommand& cmd) { dispatchSboCommand(cmd); });
+    // 切片 16：SBO 守卫注入（IoC，不持所有权）
+    m_sbo.setGuard(&m_sboGuard);
     // 主线程消费节拍：worker 经 SampleBridge 写 Sample → 本槽在消费线程处理
     // （切片 14 实测：worker→主线程 queued 信号在本 CLI 场景投递不可靠，
     //   改确定性轮询，见 SampleBridge 注释）
@@ -324,6 +359,19 @@ bool EnerSentryApp::start() {
     // 订阅 DataBus（通配）：broadcast → m_sink.onSample → AlarmEngine + 计数
     if (m_bus.subscribeWildcard(&m_sink) == 0) {
         std::fprintf(stderr, "[ENS] DataBus subscribe failed\n");
+    }
+
+    // 切片 16：月库周期 flush（dataDir 非空才启动）
+    if (!m_opts.dataDir.isEmpty()) {
+        connect(&m_flushTimer, &QTimer::timeout, this, &EnerSentryApp::onFlushTick);
+        m_flushTimer.start(1000);
+    }
+    // 切片 16：黑匣子 Critical mmap（blackboxDir 非空；失败降级仅计数）
+    if (!m_opts.blackboxDir.isEmpty()) {
+        const QString swapPath = m_opts.blackboxDir + QStringLiteral("/critical.swp");
+        if (!m_bbx.enableCriticalSwap(swapPath)) {
+            std::fprintf(stderr, "[ENS] blackbox critical mmap failed, degraded to counting\n");
+        }
     }
 
     // 5) 通道（异步连接；连接成功回调里启动轮询）
@@ -348,6 +396,11 @@ bool EnerSentryApp::start() {
     //   连接完成事件、readyRead、write 全部落到 worker 线程 → 与 engine 零跨线程。
     m_channel.moveToThread(&m_workerThread);
 
+    // 切片 16：一次性 SBO cmd 注入（等链路连接后执行）
+    if (!m_opts.sboCmd.isEmpty()) {
+        scheduleSboCmd();
+    }
+
     std::printf("[ENS] started host=%s port=%u pt=%s\n",
                 qPrintable(m_opts.host), m_opts.port,
                 qPrintable(m_opts.pointTablePath));
@@ -359,8 +412,13 @@ void EnerSentryApp::stop() {
     m_started = false;
 
     m_consumeTimer.stop();
+    m_flushTimer.stop();
     if (m_driver) {
         QMetaObject::invokeMethod(m_driver, "stopPolling", Qt::BlockingQueuedConnection);
+    }
+    // 月库最终 flush（切片 16：dataDir 非空时把剩余降采样结果落盘）
+    if (!m_opts.dataDir.isEmpty()) {
+        m_l2.flush();
     }
     // 通道在 worker 线程（open 后 moveToThread）→ close 也须在 worker 线程执行
     //（socket 的 abort/deleteLater 非线程安全，跨线程调用 UB）
@@ -382,6 +440,8 @@ void EnerSentryApp::stop() {
 
 void EnerSentryApp::onChannelConnectionChanged(bool isConnected) {
     m_connected = isConnected;
+    // 切片 16：链路状态 → SBO（断开启动 500ms 抖动窗口，防瞬时闪断误清锁）
+    m_sbo.onLinkStatusChanged(isConnected);
     if (isConnected) {
         std::printf("[ENS] link connected\n");
         QMetaObject::invokeMethod(m_driver, "startPolling",
@@ -411,7 +471,83 @@ void EnerSentryApp::onConsumeTick() {
         m_l1.write(pid, s);           // 未注册测点静默丢弃（本切片已按点表全量注册）
         m_bus.broadcast(s);           // 同步调 m_sink.onSample → AlarmEngine + 计数
         emit sampleReady(pid, ts, v);
+        // 切片 16：降采样 → 月库（dataDir 非空才做；enqueue 有背压保护）
+        if (!m_opts.dataDir.isEmpty()) {
+            m_ds.feed(pid, s, datahub::HistoryGranularity::Gran1s);
+            const auto rolled = m_ds.rollUp(pid, datahub::HistoryGranularity::Gran1s);
+            for (const auto& r : rolled) m_l2.enqueueSample(r);
+        }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 切片 16：SBO 控制流 / 黑匣子 / 月库
+// ─────────────────────────────────────────────────────────────────────────────
+
+void EnerSentryApp::onFlushTick() {
+    // 月库周期 flush（dataDir 非空时已由 start() 启动定时器）
+    m_l2.flush();
+}
+
+bool EnerSentryApp::submitSboSelect(uint32_t slaveId, uint32_t registerAddr,
+                                    uint16_t value, bool emergency) {
+    business::SboSelectRequest req;
+    req.slaveId      = slaveId;
+    req.registerAddr = registerAddr;
+    req.value        = value;
+    req.emergency    = emergency;
+    return m_sbo.submitSelect(req, QStringLiteral("cli"));
+}
+
+bool EnerSentryApp::submitSboOperate(const QString& sequenceId) {
+    return m_sbo.submitOperate(sequenceId.isEmpty() ? m_sbo.currentSequenceId() : sequenceId);
+}
+
+bool EnerSentryApp::submitSboCancel(const QString& sequenceId) {
+    return m_sbo.submitCancel(sequenceId.isEmpty() ? m_sbo.currentSequenceId() : sequenceId);
+}
+
+void EnerSentryApp::dispatchSboCommand(const business::SboCommand& cmd) {
+    // 组 FC06 写单寄存器请求；跨线程投递到 worker 线程 ModbusEngine 执行
+    protocol::ModbusRequest req;
+    req.transport        = protocol::Transport::Tcp;
+    req.slaveAddress     = static_cast<uint8_t>(cmd.slaveId);
+    req.functionCode     = 0x06;
+    req.startingAddress  = static_cast<uint16_t>(cmd.registerAddr);
+    req.quantity         = 1;
+    req.registerValues   = {static_cast<uint16_t>(cmd.value)};
+    QMetaObject::invokeMethod(&m_engine, [this, req]() {
+        const qint64 n = m_engine.writeRequest(req, 1);
+        std::printf("[ENS] SBO FC06 write slave=%u addr=%u value=%u sent=%lld\n",
+                    req.slaveAddress, req.startingAddress, req.registerValues[0],
+                    static_cast<long long>(n));
+    }, Qt::QueuedConnection);
+}
+
+void EnerSentryApp::scheduleSboCmd() {
+    // 启动 800ms 后执行（等 TCP 连接 + 轮询就绪）；单次注入后清空
+    QTimer::singleShot(800, this, [this]() {
+        const QStringList parts = m_opts.sboCmd.split(QLatin1Char(':'));
+        if (parts.isEmpty()) return;
+        const QString op = parts[0];
+        if (op == QLatin1String("select") && parts.size() >= 4) {
+            const bool ok = submitSboSelect(parts[1].toUInt(), parts[2].toUInt(),
+                                            static_cast<uint16_t>(parts[3].toUInt()),
+                                            parts.size() >= 5 && parts[4] == QLatin1String("e"));
+            std::printf("[ENS] SBO select submitted=%d seq=%s\n", ok ? 1 : 0,
+                        qPrintable(m_sbo.currentSequenceId()));
+        } else if (op == QLatin1String("operate")) {
+            const bool ok = submitSboOperate();
+            std::printf("[ENS] SBO operate submitted=%d\n", ok ? 1 : 0);
+        } else if (op == QLatin1String("cancel")) {
+            const bool ok = submitSboCancel();
+            std::printf("[ENS] SBO cancel submitted=%d\n", ok ? 1 : 0);
+        } else {
+            std::fprintf(stderr, "[ENS] bad --cmd '%s' (expect select:s:r:v[:e] / operate / cancel)\n",
+                         qPrintable(m_opts.sboCmd));
+        }
+        m_opts.sboCmd.clear();
+    });
 }
 
 }  // namespace ens::app

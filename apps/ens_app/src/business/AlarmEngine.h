@@ -75,7 +75,8 @@ signals:
     void alarmAcknowledged(uint64_t alarmId);
     /// Critical 触发 → 外部 connect 到 BlackBoxManager::triggerBlackBox
     /// （依赖倒置：业务层不直接持 datahub 引用）
-    void blackBoxRequested(uint32_t pointId, uint64_t alarmTimeEpoch);
+    /// @param level 告警级别（切片 16：黑匣子落盘需区分 Critical/非 Critical 处置）
+    void blackBoxRequested(uint32_t pointId, uint64_t alarmTimeEpoch, AlarmLevel level);
     void alarmStormTriggered(int totalCount, int droppedCount,
                              const QVector<AlarmEvent>& samples);
     void alarmStormCleared();

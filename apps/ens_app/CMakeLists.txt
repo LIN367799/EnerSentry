@@ -97,13 +97,15 @@ add_library(ens_business SHARED
     src/business/business_anchor.cpp
     src/business/BusinessStateMachine.cpp
     src/business/AlarmEngine.cpp
+    src/business/AlarmRuleLoader.cpp
     src/business/DeviceSboGuard.cpp
     src/business/SboStateMachine.cpp)
 add_library(ens::business ALIAS ens_business)
 target_include_directories(ens_business PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/business)
 target_compile_definitions(ens_business PRIVATE ENS_BUILD_SHARED)
-target_link_libraries(ens_business PUBLIC ens::datahub ens::export ens::3rdparty)
+# ens::protocol 供 AlarmRuleLoader(切片 16) 调 PointTable::allPoints 解析 pointName→pointId
+target_link_libraries(ens_business PUBLIC ens::datahub ens::protocol ens::export ens::3rdparty)
 
 # ---------------- L5 UI 视图层（STATIC） ----------------
 add_library(ens_ui STATIC

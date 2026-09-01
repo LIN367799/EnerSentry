@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "pointName": "Rack-01_MaxTemp",
+      "level": "Critical",
+      "onThreshold": 60.0,
+      "offThreshold": 55.0,
+      "onDelayMs": 3000,
+      "offDelayMs": 3000,
+      "suppressWindowMs": 60000,
+      "enabled": true,
+      "note": "整站过温演练：sim 侧 overheat_drill 将 MaxTemp 拉至 65℃ 触发 Critical → 黑匣子"
+    },
+    {
+      "pointName": "Rack-02_MaxTemp",
+      "level": "Critical",
+      "onThreshold": 60.0,
+      "offThreshold": 55.0,
+      "onDelayMs": 3000,
+      "offDelayMs": 3000,
+      "suppressWindowMs": 60000,
+      "enabled": true
+    },
+    {
+      "pointName": "Rack-01_SOC",
+      "level": "Warning",
+      "onThreshold": 20.0,
+      "offThreshold": 25.0,
+      "onDelayMs": 3000,
+      "offDelayMs": 3000,
+      "suppressWindowMs": 60000,
+      "enabled": true
+    }
+  ]
+}

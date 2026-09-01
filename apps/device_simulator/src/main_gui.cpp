@@ -16,7 +16,7 @@ namespace {
 
 // 极简 CLI 解析：--key value / 位置参数 runSec。未知 --key 报错退出。
 int parseCli(int argc, char* argv[], std::string* scenario, std::string* exportDir,
-             std::string* pointtable, int* runSec) noexcept {
+             std::string* pointtable, int* tcpPort, int* runSec) noexcept {
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--scenario") {
@@ -28,6 +28,9 @@ int parseCli(int argc, char* argv[], std::string* scenario, std::string* exportD
         } else if (a == "--pointtable") {
             if (i + 1 >= argc) return -1;
             *pointtable = argv[++i];
+        } else if (a == "--port") {
+            if (i + 1 >= argc) return -1;
+            *tcpPort = std::atoi(argv[++i]);
         } else if (a == "--help" || a == "-h") {
             return 1;
         } else {
@@ -45,13 +48,15 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
 
     int runSec = 5;
+    int tcpPort = 0;   // 0 = OS 分配（默认；联调时显式指定固定端口）
     std::string scenarioPath;
     std::string exportDir;
     std::string pointtablePath = "docs/04-测试台/data/sim_pointtable_sample.json";
-    const int rc = parseCli(argc, argv, &scenarioPath, &exportDir, &pointtablePath, &runSec);
+    const int rc = parseCli(argc, argv, &scenarioPath, &exportDir, &pointtablePath,
+                            &tcpPort, &runSec);
     if (rc == 1) {
         std::cout << "usage: DeviceSimulator [runSec] [--scenario <path>] [--export-dir <dir>]\n"
-                  << "       [--pointtable <path>]\n";
+                  << "       [--pointtable <path>] [--port <tcpPort>]\n";
         return 0;
     }
     if (rc != 0) {
@@ -64,7 +69,7 @@ int main(int argc, char* argv[]) {
     ens::sim::SimConfig cfg;
     cfg.tickMs = 100;
     cfg.seed   = 0;
-    cfg.tcp.port = 0;  // OS 分配,实际端口由 emu->tcpPort() 读出
+    cfg.tcp.port = static_cast<uint16_t>(tcpPort);
     // CLI 模式默认纯 TCP:RTU 打开依赖 com0com 虚拟串口,未就绪会让整体启动失败
     // （emu.start 的 DoD 严格语义）。B10 GUI 控制台按 FR-SIM-09 默认双链路启用。
     cfg.rtu.enabled = false;
