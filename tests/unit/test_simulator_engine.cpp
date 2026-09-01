@@ -14,6 +14,7 @@
 
 #include "core/point_table.h"
 #include "sim/FaultInjector.h"
+#include "sim/register_bank.h"
 #include "sim/sim_config.h"
 #include "sim/SimulatorEngine.h"
 
@@ -133,4 +134,60 @@ TEST_CASE("simulator_engine: start with missing pointtable returns false (no ter
     // 必须优雅返 false，不 terminate / 不挂起
     REQUIRE_FALSE(engine.start(cfg));
     REQUIRE_FALSE(engine.isRunning());
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5) 切片 17 复现：overheat_fast 场景下 Rack-01 MaxTemp holding 跨 tick 稳定性
+// （联调观察到 65℃ 只出现一次后掉回 33℃，定位 sim 侧叠加是否持续）
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("simulator_engine: overheat_fast holds MaxTemp=65 across ticks then recovers",
+          "[master][sim][simulator_engine][scenario][repro][tier2]") {
+    // 场景路径（test_data/scenarios/overheat_fast.json）
+    std::filesystem::path scn;
+    {
+        const std::filesystem::path cands[] = {
+            std::filesystem::path(L"test_data/scenarios/overheat_fast.json"),
+            std::filesystem::path(L"../test_data/scenarios/overheat_fast.json"),
+        };
+        for (const auto& c : cands) {
+            std::error_code ec;
+            if (std::filesystem::exists(c, ec)) { scn = c; break; }
+        }
+    }
+    REQUIRE(!scn.empty());
+
+    auto cfg = makeTestCfg();
+    cfg.scenarioPath = scn.string();
+    SimulatorEngine sim;
+    REQUIRE(sim.start(cfg));
+
+    // t≈0 INJECT → Rack-01 MaxTemp holding = 650（65℃ × scale 0.1）
+    std::this_thread::sleep_for(std::chrono::milliseconds(1200));
+    {
+        auto snap = sim.bank()->snapshot(1);
+        REQUIRE(snap != nullptr);
+        const uint16_t v = snap->getHolding(4096);
+        INFO("t=1.2s holding[4096]=" << v);
+        REQUIRE(v == 650);
+    }
+    // 再等 1.5s（场景 t≈3s，RECOVER t=5000 前）：必须仍 650
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    {
+        auto snap = sim.bank()->snapshot(1);
+        REQUIRE(snap != nullptr);
+        const uint16_t v = snap->getHolding(4096);
+        INFO("t=2.7s holding[4096]=" << v);
+        REQUIRE(v == 650);
+    }
+    // 等过 RECOVER（t=5000）+ 回归 → evolve 自然值（~33℃ raw=331，非 650）
+    std::this_thread::sleep_for(std::chrono::milliseconds(3500));
+    {
+        auto snap = sim.bank()->snapshot(1);
+        REQUIRE(snap != nullptr);
+        const uint16_t v = snap->getHolding(4096);
+        INFO("t=6.2s holding[4096]=" << v);
+        REQUIRE(v < 400);   // 已脱离 650（65℃）；回落到 evolve 值域（切片 17 实测 331）
+        REQUIRE(v > 0);
+    }
+    sim.stop();
 }

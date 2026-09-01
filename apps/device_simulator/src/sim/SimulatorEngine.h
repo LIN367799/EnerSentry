@@ -82,6 +82,9 @@ public:
     /// 诊断:cfg 传入的 tickMs（供 CLI 模式 sleep_for 使用）
     uint32_t tickMs() const noexcept { return m_tickMs; }
 
+    /// 诊断（切片 17）：暴露 RCU 寄存器库（测试/复现用；DevGuide §4B 骨架定义）
+    RegisterBank* bank() noexcept { return m_bank.get(); }
+
 private:
     void dataTickLoop() noexcept;  // DataTick 线程入口
 

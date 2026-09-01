@@ -26,6 +26,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -58,13 +59,27 @@ std::filesystem::path findAlarmRulesJson() {
     throw std::runtime_error("cannot locate test_data/alarm_rules_sample.json");
 }
 
+// drill 场景（切片 17）：test_data/scenarios/<name>.json
+std::filesystem::path findScenarioJson(const char* name) {
+    const std::filesystem::path candidates[] = {
+        std::filesystem::path(L"test_data/scenarios") / name,
+        std::filesystem::path(L"../test_data/scenarios") / name,
+    };
+    for (const auto& p : candidates) {
+        if (std::filesystem::exists(p)) return p;
+    }
+    throw std::runtime_error(std::string("cannot locate test_data/scenarios/") + name);
+}
+
 /// 双轨夹具：起 sim（kSimPort）+ es（CLI 接线器），返回前 es 已 start
 struct LoopbackRig {
     ens::sim::SimulatorEngine sim;
     ens::app::EnerSentryApp*  es = nullptr;
 
     LoopbackRig() = delete;
-    explicit LoopbackRig(const ens::app::EnerSentryApp::Options& opts) {
+    explicit LoopbackRig(const ens::app::EnerSentryApp::Options& opts,
+                         const std::string& simScenario = {},
+                         const std::string& simExportDir = {}) {
         const auto ptPath = findPointTableJson();
         const std::string ptPathStr = ptPath.string();
 
@@ -76,6 +91,8 @@ struct LoopbackRig {
         simCfg.pointtablePath = ptPathStr;
         simCfg.tickMs         = 100;
         simCfg.slaves         = ens::sim::SimConfig::fromPointTable(*simPt);
+        simCfg.scenarioPath   = simScenario;   // 切片 17：drill 场景自动驱动
+        simCfg.exportDir      = simExportDir;  // 切片 17：场景报告落盘（失败诊断）
         REQUIRE(sim.start(simCfg));
 
         es = new ens::app::EnerSentryApp(opts);
@@ -242,4 +259,108 @@ TEST_CASE("main_loop: SBO select -> armed -> operate through app wiring",
     REQUIRE(rig.es->submitSboOperate());
     rig.pump(100);
     REQUIRE(rig.es->sboState() == ens::business::SBOState::Executed);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 切片 17 T3：overheat_fast drill 全流程（告警 → 黑匣子 → 月库 → 恢复）
+// 4.3.4 联调验收：alarmWord 链路 + [L4][ALM] + 黑匣子落盘 + 月库生成 + 恢复复位
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("main_loop: overheat_fast drill drives alarm+blackbox+monthly DB then recovers",
+          "[integration][main_loop][drill][overheat][slice17]") {
+    const auto dbRoot = std::filesystem::temp_directory_path() / "ens_test_db_s17";
+    std::error_code ec;
+    std::filesystem::remove_all(dbRoot, ec);
+    std::filesystem::create_directories(dbRoot, ec);
+
+    ens::app::EnerSentryApp::Options opts;
+    opts.host           = QStringLiteral("127.0.0.1");
+    opts.port           = kSimPort;
+    opts.pointTablePath = QString::fromStdString(findPointTableJson().string());
+    opts.alarmRulesPath = QString::fromStdString(findAlarmRulesJson().string());
+    opts.dataDir        = QString::fromStdString(dbRoot.string());
+    opts.blackboxDir    = QString::fromStdString(dbRoot.string());
+
+    // sim 加载 overheat_fast：t=0 立即 65℃（Critical 越限 60），t=5s 回归 35℃
+    LoopbackRig rig(opts, findScenarioJson("overheat_fast.json").string(), dbRoot.string());
+    // 告警事件时序收集（失败诊断：哪条点号、何时触发）
+    std::vector<QString> alarms;
+    QObject::connect(rig.es, &ens::app::EnerSentryApp::alarmRaised,
+                     [&alarms](const QString& t) { alarms.push_back(t); });
+    // MaxTemp 值序列收集（失败诊断：主程序读到 65 后是否回落到 55 以下）
+    std::vector<std::string> temps;
+    QObject::connect(rig.es, &ens::app::EnerSentryApp::sampleReady,
+                     [&temps](uint32_t pid, qint64, double v) {
+        if (pid == 1 || pid == 26) {
+            char b[64];
+            std::snprintf(b, sizeof(b), "pt=%u v=%.2f", pid, v);
+            temps.emplace_back(b);
+        }
+    });
+
+    // ── 告警触发（onDelay 3s；总上限 10s）──
+    QElapsedTimer t;
+    t.start();
+    while (t.elapsed() < 10000 && rig.es->alarmCount() == 0) rig.pump(50);
+    INFO("elapsedMs=" << t.elapsed() << " alarmCount=" << rig.es->alarmCount()
+         << " blackbox=" << rig.es->blackboxTriggerCount());
+    REQUIRE(rig.es->alarmCount() >= 1);
+    REQUIRE(rig.es->blackboxTriggerCount() >= 1);   // Critical → 黑匣子
+
+    // ── 月库落盘（1s flush 后 history 目录出现）──
+    while (t.elapsed() < 10000 && rig.es->historyPendingCount() > 0) rig.pump(50);
+    REQUIRE(std::filesystem::exists(dbRoot / "history", ec));
+
+    // ── 恢复：RECOVER t=5s + 快速回归 + offDelay 3s + 段轮转稀疏样本（MaxTemp 每 ~2-4s
+    //    一次，恢复判定依赖样本间隔）→ 上限放宽 20s（切片 17 实测 12s 不够）──
+    while (t.elapsed() < 20000 && rig.es->alarmCount() > 0) rig.pump(50);
+    INFO("finalElapsedMs=" << t.elapsed() << " alarmCount=" << rig.es->alarmCount());
+    for (const auto& a : alarms) UNSCOPED_INFO("alarm_event: " << qPrintable(a));
+    for (const auto& s : temps) UNSCOPED_INFO("temp: " << s);
+    REQUIRE(rig.es->alarmCount() == 0);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 切片 17 T3：SBO armed 断链清锁 + 自动重连（random_linkloss 的确定性单点版）
+// 4.3.4 联调验收：FR-CTRL-07 断线自动清锁；COMM-09 重连
+// ═════════════════════════════════════════════════════════════════════════════
+TEST_CASE("main_loop: SBO armed clears on link loss and reconnects after",
+          "[integration][main_loop][sbo][linkloss][slice17]") {
+    ens::app::EnerSentryApp::Options opts;
+    opts.host           = QStringLiteral("127.0.0.1");
+    opts.port           = kSimPort;
+    opts.pointTablePath = QString::fromStdString(findPointTableJson().string());
+
+    LoopbackRig rig(opts);
+    rig.pump(800);   // 等连接（异步 connectToHost）
+    REQUIRE(rig.es->isConnected());
+
+    // ── Select → Armed ──
+    REQUIRE(rig.es->submitSboSelect(17, 0x1000, 1));
+    rig.pump(200);
+    REQUIRE(rig.es->sboState() == ens::business::SBOState::Armed);
+
+    // ── CommLoss 注入 slave 17（SLAVE scope，2.5s 后自动恢复）→ 断链清锁 ──
+    ens::sim::FaultRequest req;
+    req.spec.type       = ens::sim::FaultType::CommLoss;
+    req.spec.scope      = ens::sim::Scope::SLAVE;
+    req.spec.slave      = 17;
+    req.spec.durationMs = 2500;
+    REQUIRE(rig.sim.injectFault(req) != 0);
+
+    // 断链 → 抖动窗口 500ms → 清锁 Idle
+    QElapsedTimer t;
+    t.start();
+    while (t.elapsed() < 6000 && rig.es->sboState() != ens::business::SBOState::Idle) {
+        rig.pump(50);
+    }
+    INFO("linkloss elapsedMs=" << t.elapsed() << " sboState="
+         << static_cast<int>(rig.es->sboState())
+         << " connected=" << rig.es->isConnected());
+    REQUIRE(rig.es->sboState() == ens::business::SBOState::Idle);
+    REQUIRE_FALSE(rig.es->isConnected());
+
+    // ── CommLoss 到期 → TcpChannel 退避重连（1s 起）──
+    while (t.elapsed() < 10000 && !rig.es->isConnected()) rig.pump(50);
+    INFO("reconnect elapsedMs=" << t.elapsed() << " connected=" << rig.es->isConnected());
+    REQUIRE(rig.es->isConnected());
 }

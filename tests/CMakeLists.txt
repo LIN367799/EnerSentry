@@ -99,6 +99,7 @@ file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data/scenarios)
 file(COPY
      "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/overheat_drill.json"
+     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/overheat_fast.json"
      "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/random_linkloss_stress.json"
      "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/voltage_fault_drill.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data/scenarios)

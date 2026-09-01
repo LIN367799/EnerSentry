@@ -1,0 +1,32 @@
+{
+  "name": "overheat_fast",
+  "description": "快速过温演练（切片 17 联调用）：t=0 立即置全部 MaxTemp=65℃（Critical 越限 60），t=5s 快速回归 35℃。验证告警全链路 + 黑匣子 + 月库 + 恢复，总时长 ~5s（原 overheat_drill 70s 版本留给 CLI 人工验收）。",
+  "version": "1.0",
+  "seed": 20260901,
+  "steps": [
+    {
+      "t": 0,
+      "action": "INJECT",
+      "fault": "FR-SIM-05a",
+      "scope": "cluster",
+      "slave": "ALL",
+      "register": "MaxTemp",
+      "targetValue": 65.0,
+      "rampRate": 100.0,
+      "durationMs": 0,
+      "alarmBit": 0,
+      "note": "rampRate=100 仅用于 RECOVERING 快速回归（FaultInjector ACTIVE 期 currentValue 瞬时=targetValue）"
+    },
+    {
+      "t": 5000,
+      "action": "RECOVER",
+      "fault": "FR-SIM-05a",
+      "scope": "cluster",
+      "slave": "ALL",
+      "register": "MaxTemp",
+      "targetValue": 35.0,
+      "rampRate": 100.0,
+      "durationMs": 0
+    }
+  ]
+}

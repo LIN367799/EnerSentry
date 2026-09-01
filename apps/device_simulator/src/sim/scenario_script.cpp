@@ -323,6 +323,20 @@ void ScenarioScript::fireRecover(const ScenarioStep& s, FaultInjector& fi) {
         appendEvent("INFO", "FAULT_RECOVER_SKIP", 0, 0, s.fault, "no matching inject handle");
         return;
     }
+    if (s.slaveSpec == "ALL") {
+        // 切片 17 实测修复：slave=ALL 展开的多个 handle 共享同一个 key（handleKey 不含
+        // 实际 slave），RECOVER(ALL) 必须恢复全部 handle——原实现只 pop 一个，导致
+        // Rack-02 的 OverTemp 漏恢复（主程序 65℃ 持续不消、同源抑制掩盖）。
+        const size_t n = it->second.size();
+        for (const FaultHandle h : it->second) {
+            fi.recover(h, s.targetValue);
+        }
+        appendEvent("INFO", "FAULT_RECOVER", 0, 0, s.fault,
+                    "recovering ALL (" + std::to_string(n) + " handles) target=" +
+                        std::to_string(s.targetValue));
+        it->second.clear();
+        return;
+    }
     const FaultHandle h = it->second.front();
     it->second.erase(it->second.begin());
     // 回归目标 = RECOVER step 的 targetValue（overheat: 65→35℃；voltage: 3.65→3.30V）

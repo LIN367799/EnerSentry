@@ -20,16 +20,6 @@
       "offDelayMs": 3000,
       "suppressWindowMs": 60000,
       "enabled": true
-    },
-    {
-      "pointName": "Rack-01_SOC",
-      "level": "Warning",
-      "onThreshold": 20.0,
-      "offThreshold": 25.0,
-      "onDelayMs": 3000,
-      "offDelayMs": 3000,
-      "suppressWindowMs": 60000,
-      "enabled": true
     }
   ]
 }

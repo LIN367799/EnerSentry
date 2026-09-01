@@ -48,8 +48,8 @@ TEST_CASE("alarm_rule_loader: loads sample rules with pointName -> pointId resol
     std::string err;
     const int n = business::AlarmRuleLoader::loadFromFile(
         findTestData("alarm_rules_sample.json"), *pt, rules, &err);
-    REQUIRE(n == 3);
-    REQUIRE(rules.size() == 3);
+    REQUIRE(n == 2);   // 切片 17：SOC 低告警规则移除（AlarmEngine 仅支持高触发方向）
+    REQUIRE(rules.size() == 2);
 
     // 首条：Rack-01_MaxTemp → pointId=1, Critical, 60/55
     REQUIRE(rules[0].pointId == 1);
