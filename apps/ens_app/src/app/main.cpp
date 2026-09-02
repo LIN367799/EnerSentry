@@ -168,6 +168,7 @@ int main(int argc, char* argv[]) {
     deps.port = opts.port;
     deps.pollMs = opts.pollIntervalMs;
     deps.dataAccess = es.dataAccess();   // 切片 24：历史查询（未启用 --data-dir 时查询返空）
+    deps.usersPath = parser.value(usersOpt);   // 切片 31：用户管理保存目标
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
 
     ens::ui::MainWindow w(deps);

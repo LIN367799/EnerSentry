@@ -2,12 +2,15 @@
 #include "AuthManager.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QCryptographicHash>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QRandomGenerator>
 #include <QStringList>
 
 #include <algorithm>
@@ -250,6 +253,86 @@ ScopedAuthGuard::~ScopedAuthGuard() {
     if (m_auth) {
         m_auth->auditRecord(m_action, m_perm, m_granted);
     }
+}
+
+// ── 用户管理（切片 31，FR-AUTH-01 完整版）──
+
+namespace {
+/// 随机 salt（两个 64 位随机数 hex 拼接，32 hex 字符）
+QString randomSalt() {
+    return QString::fromLatin1(
+        QByteArray::number(QRandomGenerator::global()->generate64(), 16) +
+        QByteArray::number(QRandomGenerator::global()->generate64(), 16));
+}
+/// 生成 sha256$<salt>$<hash> 存储串
+QString hashPasswordWithSalt(const QString& password, const QString& salt) {
+    return QStringLiteral("sha256$%1$%2").arg(salt, sha256Hex(salt.toUtf8() + password.toUtf8()));
+}
+}  // namespace
+
+QVector<AuthManager::UserInfo> AuthManager::listUsers() const {
+    QVector<UserInfo> out;
+    out.reserve(m_users.size());
+    for (const UserRec& u : m_users) {
+        out.push_back(UserInfo{u.username, u.role});
+    }
+    return out;
+}
+
+bool AuthManager::addUser(const QString& username, const QString& password, UserRole role) {
+    if (username.isEmpty() || password.isEmpty()) return false;
+    if (findUser(username) != nullptr) return false;   // 已存在
+    UserRec rec;
+    rec.username = username;
+    rec.password = hashPasswordWithSalt(password, randomSalt());
+    rec.role     = role;
+    m_users.push_back(rec);
+    appendAudit(QStringLiteral("admin"), QStringLiteral("user.add"), username, true);
+    return true;
+}
+
+bool AuthManager::removeUser(const QString& username) {
+    if (username == m_currentUser) return false;   // 禁删自己（防自杀锁死）
+    const auto it = std::find_if(m_users.begin(), m_users.end(),
+        [&](const UserRec& u) { return u.username == username; });
+    if (it == m_users.end()) return false;
+    m_users.erase(it);
+    appendAudit(QStringLiteral("admin"), QStringLiteral("user.remove"), username, true);
+    return true;
+}
+
+bool AuthManager::changePassword(const QString& username, const QString& newPassword) {
+    if (newPassword.isEmpty()) return false;
+    UserRec* u = const_cast<UserRec*>(findUser(username));
+    if (!u) return false;
+    u->password = hashPasswordWithSalt(newPassword, randomSalt());
+    appendAudit(username, QStringLiteral("user.chpwd"), {}, true);
+    return true;
+}
+
+bool AuthManager::saveUsersToJson(const QString& path) {
+    QFileInfo fi(path);
+    const QDir dir = fi.absoluteDir();
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) return false;
+
+    QJsonArray arr;
+    for (const UserRec& u : m_users) {
+        QJsonObject o;
+        o.insert(QStringLiteral("username"), u.username);
+        o.insert(QStringLiteral("password"), u.password);   // 已哈希
+        o.insert(QStringLiteral("role"), u.role == UserRole::Admin   ? QStringLiteral("Admin")
+                                          : u.role == UserRole::Engineer ? QStringLiteral("Engineer")
+                                                                         : QStringLiteral("Operator"));
+        arr.append(o);
+    }
+    QJsonObject root;
+    root.insert(QStringLiteral("users"), arr);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    f.close();
+    appendAudit(QStringLiteral("admin"), QStringLiteral("user.save"), path, true);
+    return true;
 }
 
 }  // namespace ens::business

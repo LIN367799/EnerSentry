@@ -59,6 +59,7 @@
     <property name="title">
      <string>工具(&amp;T)</string>
     </property>
+    <addaction name="actUsers"/>
     <addaction name="actAudit"/>
     <addaction name="actLock"/>
    </widget>
@@ -138,6 +139,11 @@
   <action name="actAudit">
    <property name="text">
     <string>审计日志(&amp;A)</string>
+   </property>
+  </action>
+  <action name="actUsers">
+   <property name="text">
+    <string>用户管理(&amp;U)</string>
    </property>
   </action>
   <action name="actExit">

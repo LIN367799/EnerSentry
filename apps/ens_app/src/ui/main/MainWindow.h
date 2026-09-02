@@ -77,6 +77,8 @@ struct UiDeps {
     int     pollMs = 0;
     // 切片 24：历史查询（HistoryTrendWidget）
     ens::datahub::IDataAccess* dataAccess = nullptr;
+    // 切片 31：用户表路径（UserManagerDialog 保存目标）
+    QString usersPath;
 
     QString linkLabel;      // 状态栏：连接标识
 };
@@ -102,6 +104,7 @@ private slots:
     void switchView(int index);
     void onLockClicked();
     void onAuditClicked();   // 切片 30：审计日志对话框
+    void onUsersClicked();   // 切片 31：用户管理对话框
     void onAbout();
     void onStatusTick();   // 1s：时钟 + idle 超时检查 + 告警计数
 

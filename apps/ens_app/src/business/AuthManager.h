@@ -109,6 +109,22 @@ public:
     UserRole currentRole() const { return m_currentRole; }
     int  userCount() const { return static_cast<int>(m_users.size()); }
 
+    // ── 用户管理（切片 31，FR-AUTH-01 完整版）──
+    struct UserInfo {
+        QString  username;
+        UserRole role = UserRole::Operator;
+    };
+    /// 用户列表（不含密码，供 UI 展示）
+    QVector<UserInfo> listUsers() const;
+    /// 新增用户：随机 salt + SHA-256 哈希存储
+    bool addUser(const QString& username, const QString& password, UserRole role);
+    /// 删除用户：禁删当前登录用户（防止自杀锁死会话）
+    bool removeUser(const QString& username);
+    /// 改密：随机 salt 重哈希（旧密码立即失效）
+    bool changePassword(const QString& username, const QString& newPassword);
+    /// 写回 users.json（哈希格式，UTF-8）；目录不存在自动创建
+    bool saveUsersToJson(const QString& path);
+
     /// ── 会话锁定（FR-AUTH-05）──
     bool isLocked() const { return m_locked; }
     void lock();                        // 手动锁屏
