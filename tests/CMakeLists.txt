@@ -32,6 +32,7 @@ add_executable(ens_tests
     unit/test_alarm_engine.cpp
     unit/test_alarm_direction.cpp
     unit/test_auth_manager.cpp
+    unit/test_ui_smoke.cpp
     unit/test_auth_security.cpp
     unit/test_user_manage.cpp
     unit/test_must_change.cpp

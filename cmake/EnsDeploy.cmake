@@ -99,4 +99,13 @@ function(ens_windeployqt target)
         COMMENT "Deploying Qt runtime for ${target}"
         VERBATIM
     )
+    # 切片 33：GUI 冒烟（QApplication/offscreen）需 offscreen 平台插件——
+    # windeployqt 默认集不含，POST_BUILD 补拷（Debug 配置为 qoffscreend.dll）
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${_EnsDeploy_qt_root}/plugins/platforms/$<IF:$<CONFIG:Debug>,qoffscreend.dll,qoffscreen.dll>"
+            "$<TARGET_FILE_DIR:${target}>/platforms/$<IF:$<CONFIG:Debug>,qoffscreend.dll,qoffscreen.dll>"
+        COMMENT "Copying offscreen platform plugin for ${target}"
+        VERBATIM
+    )
 endfunction()

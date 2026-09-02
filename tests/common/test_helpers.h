@@ -1,9 +1,9 @@
 // tests/common/test_helpers.h —— 集成测试公共工具（Tier 3 事件循环等待 / TCP 帧构造）。
-// 各 integration 测试共用：QCoreApplication 单例（Catch2 进程内只能建一次）、
-// 信号等待器（新式 connect + 具体 sender 类型）、FC03 读请求帧组帧。
+// 各 integration 测试共用：QApplication 单例（切片 33：由 QCoreApplication 升级，
+//   GUI 冒烟需 QWidget；offscreen 平台无窗口可跑）、信号等待器、FC03 读请求帧组帧。
 #pragma once
 
-#include <QCoreApplication>
+#include <QApplication>
 #include <QEventLoop>
 #include <QTimer>
 
@@ -15,13 +15,17 @@
 
 namespace ens::test {
 
-// QCoreApplication 单例（QTimer/事件循环前提）
+// QApplication 单例（QTimer/事件循环/QWidget 前提；QCoreApplication 兼容语义）
 inline QCoreApplication* appInstance() {
     static QCoreApplication* app = [] {
         static int argc = 1;
         static char arg0[] = "ens_tests";
         static char* argv[] = {arg0, nullptr};
-        return new QCoreApplication(argc, argv);
+        // 切片 33：GUI 测试无窗口环境跑 → offscreen 平台（QApplication 构造前必须设置）
+        if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+            qputenv("QT_QPA_PLATFORM", "offscreen");
+        }
+        return new QApplication(argc, argv);
     }();
     return app;
 }
