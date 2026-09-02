@@ -133,6 +133,8 @@ add_library(ens_ui STATIC
     src/ui/controls/AuditLogDialog.cpp
     src/ui/controls/CriticalAlarmDialog.ui
     src/ui/controls/CriticalAlarmDialog.cpp
+    src/ui/controls/AlarmReplayDialog.ui
+    src/ui/controls/AlarmReplayDialog.cpp
     src/ui/controls/UserManagerDialog.ui
     src/ui/controls/UserManagerDialog.cpp
     src/ui/views/OverviewWidget.ui

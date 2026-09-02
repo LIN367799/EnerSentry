@@ -169,6 +169,7 @@ int main(int argc, char* argv[]) {
     deps.pollMs = opts.pollIntervalMs;
     deps.dataAccess = es.dataAccess();   // 切片 24：历史查询（未启用 --data-dir 时查询返空）
     deps.alarmAccess = es.alarmAccess(); // 切片 36：告警历史查询（FR-AL-11）
+    deps.l1Replay = es.l1Replay();       // 切片 38：L1 高频回放（FR-AL-12）
     deps.usersPath = parser.value(usersOpt);   // 切片 31：用户管理保存目标
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
 

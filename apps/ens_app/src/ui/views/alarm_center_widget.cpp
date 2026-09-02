@@ -1,10 +1,13 @@
-// src/ui/views/alarm_center_widget.cpp —— 告警中心完整版实现（切片 36）。
+// src/ui/views/alarm_center_widget.cpp —— 告警中心完整版实现（切片 36/38）。
 #include "views/alarm_center_widget.h"
 #include "ui_AlarmCenterWidget.h"
 
 #include "common/CsvWriter.h"
+#include "controls/AlarmReplayDialog.h"
 #include "AlarmEngine.h"
+#include "IL1SnapshotReader.h"
 #include "PointTable.h"
+#include "Sample.h"
 
 #include <QColor>
 #include <QDateTime>
@@ -20,7 +23,10 @@ namespace ens::ui {
 
 namespace {
 
-constexpr int kIdRole = Qt::UserRole;   // 行数据角色：alarm id
+constexpr int kIdRole    = Qt::UserRole;      // 行数据：告警 id
+constexpr int kPointRole = Qt::UserRole + 1;  // 行数据：测点 id（回放）
+constexpr int kTimeRole  = Qt::UserRole + 2;  // 行数据：触发时间（回放）
+constexpr int kReplayWindowMs = 30000;        // FR-AL-12：告警前后各 30s
 
 QString levelText(int level) {
     switch (level) {
@@ -69,9 +75,10 @@ AlarmCenterWidget::AlarmCenterWidget(ens::business::AlarmEngine* alarm,
                                      ens::datahub::IAlarmAccess* access,
                                      const std::shared_ptr<ens::protocol::PointTable>& pt,
                                      std::function<QString()> currentUser,
+                                     ens::datahub::IL1SnapshotReader* replay,
                                      QWidget* parent)
     : QWidget(parent), ui(new Ui::AlarmCenterWidget), m_alarm(alarm), m_access(access),
-      m_pt(pt), m_currentUser(std::move(currentUser)) {
+      m_replay(replay), m_pt(pt), m_currentUser(std::move(currentUser)) {
     ui->setupUi(this);
 
     m_model = new QStandardItemModel(this);
@@ -101,7 +108,9 @@ AlarmCenterWidget::AlarmCenterWidget(ens::business::AlarmEngine* alarm,
 
     connect(ui->btnQuery, &QPushButton::clicked, this, &AlarmCenterWidget::onQueryClicked);
     connect(ui->btnConfirm, &QPushButton::clicked, this, &AlarmCenterWidget::onConfirmClicked);
+    connect(ui->btnReplay, &QPushButton::clicked, this, &AlarmCenterWidget::onReplayClicked);
     connect(ui->btnExport, &QPushButton::clicked, this, &AlarmCenterWidget::onExportClicked);
+    if (!m_replay) ui->btnReplay->setEnabled(false);   // 切片 38：无 L1 数据源禁用
 
     if (m_alarm) {
         // AlarmEngine 与 UI 同线程（主线程）→ direct；AlarmEvent 已注册 metatype（兼容 queued）
@@ -203,7 +212,11 @@ void AlarmCenterWidget::applyRows(const std::vector<ens::datahub::AlarmRecord>& 
         m_model->setItem(row, 8, new QStandardItem(fmtTime(r.confirmTime)));
         m_model->setItem(row, 9, new QStandardItem(fmtTime(r.recoverTime)));
         m_model->setItem(row, 10, new QStandardItem(r.description));
-        m_model->item(row, 0)->setData(static_cast<qlonglong>(r.id), kIdRole);
+        // 行元数据：id/测点/触发时间（确认与 ±30s 回放读取）
+        QStandardItem* first = m_model->item(row, 0);
+        first->setData(static_cast<qlonglong>(r.id), kIdRole);
+        first->setData(static_cast<qlonglong>(r.pointId), kPointRole);
+        first->setData(static_cast<qlonglong>(r.triggerTime), kTimeRole);
     }
 }
 
@@ -244,6 +257,41 @@ void AlarmCenterWidget::onConfirmClicked() {
     }
     m_alarm->acknowledgeAlarms(ids, user);
     onQueryClicked();   // 刷新状态列
+}
+
+void AlarmCenterWidget::onReplayClicked() {
+    // 切片 38（FR-AL-12）：选中告警 → L1 内存 ±30s 高频回放曲线
+    if (!m_replay) return;
+    const QModelIndexList sel = ui->tableAlarms->selectionModel()->selectedRows(0);
+    if (sel.isEmpty()) {
+        ui->lblHint->setText(QStringLiteral("请先选择要回放的告警行"));
+        return;
+    }
+    const QModelIndex& idx = sel.first();
+    const QStandardItem* it = m_model->item(idx.row(), 0);
+    if (!it) return;
+    const uint32_t pointId = static_cast<uint32_t>(it->data(kPointRole).toLongLong());
+    const uint64_t triggerTime =
+        static_cast<uint64_t>(it->data(kTimeRole).toLongLong());
+    if (pointId == 0 || triggerTime == 0) {
+        ui->lblHint->setText(QStringLiteral("该记录缺少测点/触发时间上下文"));
+        return;
+    }
+
+    std::vector<ens::datahub::Sample> buf(2048);
+    const size_t n = m_replay->replayExtract(
+        pointId, triggerTime - kReplayWindowMs, triggerTime + kReplayWindowMs,
+        buf.data(), buf.size());
+    buf.resize(n);
+
+    QString pointName;
+    if (m_pt) {
+        const auto* p = m_pt->pointIdOf(pointId);
+        if (p) pointName = QString::fromStdString(p->pointName);
+    }
+    AlarmReplayDialog dlg(this);
+    dlg.setData(pointId, pointName, triggerTime, buf);
+    dlg.exec();
 }
 
 void AlarmCenterWidget::onExportClicked() {

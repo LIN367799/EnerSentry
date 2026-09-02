@@ -31,6 +31,7 @@
 #include "ModbusEngine.h"
 #include "PollScheduler.h"
 #include "PointTable.h"
+#include "IL1SnapshotReader.h"
 #include "L1SnapshotStore.h"
 #include "DataBus.h"
 #include "AlarmEngine.h"
@@ -156,6 +157,8 @@ public:
     datahub::IDataAccess* dataAccess() noexcept { return &m_dal; }
     // 切片 36：告警历史查询抽象（AlarmCenterWidget 注入；dataDir 空时查询返空）
     datahub::IAlarmAccess* alarmAccess() noexcept { return &m_dal; }
+    // 切片 38：L1 高频快照回放读取（AlarmCenter ±30s，FR-AL-12）
+    datahub::IL1SnapshotReader* l1Replay() noexcept { return &m_l1; }
 
 signals:
     void connected();

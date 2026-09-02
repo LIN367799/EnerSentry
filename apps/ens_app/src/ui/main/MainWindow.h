@@ -41,6 +41,7 @@ namespace ens::datahub {
 class DataBus;
 class IDataAccess;
 class IAlarmAccess;
+class IL1SnapshotReader;
 }  // namespace ens::datahub
 
 namespace Ui {
@@ -85,6 +86,8 @@ struct UiDeps {
     ens::datahub::IDataAccess* dataAccess = nullptr;
     // 切片 36：告警历史查询（AlarmCenterWidget，FR-AL-11；未启用 --data-dir 时查询返空）
     ens::datahub::IAlarmAccess* alarmAccess = nullptr;
+    // 切片 38：L1 高频快照回放（AlarmCenterWidget ±30s，FR-AL-12；null → 回放按钮禁用）
+    ens::datahub::IL1SnapshotReader* l1Replay = nullptr;
     // 切片 31：用户表路径（UserManagerDialog 保存目标）
     QString usersPath;
 

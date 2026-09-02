@@ -75,6 +75,13 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnReplay">
+       <property name="text">
+        <string>回放 ±30s</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btnExport">
        <property name="enabled">
         <bool>false</bool>

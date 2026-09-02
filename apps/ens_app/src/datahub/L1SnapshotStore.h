@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "IL1SnapshotReader.h"
 #include "RingBuffer.h"
 #include "Sample.h"
 
@@ -34,7 +35,8 @@ struct RingBufferPolicyEntry {
 };
 
 /// @brief L1 快照库：按 pointId 路由到对应 RingBuffer，热路径 O(1) 数组下标
-class L1SnapshotStore {
+/// 切片 38：实现 IL1SnapshotReader（AlarmCenter 回放弹窗经抽象读取，FR-AL-12）
+class L1SnapshotStore : public IL1SnapshotReader {
 public:
     L1SnapshotStore() = default;
     ~L1SnapshotStore();
@@ -67,6 +69,12 @@ public:
                         Sample* out, size_t maxCount) const noexcept {
         auto* rb = lookup(pointId);
         return (rb) ? rb->extractRange(startTs, endTs, out, maxCount) : 0;
+    }
+
+    // ── IL1SnapshotReader（切片 38，FR-AL-12 回放）──
+    size_t replayExtract(uint32_t pointId, uint64_t beginMs, uint64_t endMs,
+                         Sample* out, size_t maxCount) const noexcept override {
+        return extractRange(pointId, beginMs, endMs, out, maxCount);
     }
 
     /// 黑匣子锁定槽位（防止滚动淘汰覆盖，V1.1 预留；本切片暂空）
