@@ -1,6 +1,6 @@
 // src/ui/auth/LoginDialog.h —— L5 登录首屏（ENS-LLD-500 §2.1 LoginDialog / FR-AUTH-01）。
 // 持 AuthManager*（依赖注入，不直接构造认证逻辑）；exec() 返回 Accepted 表示登录成功。
-// 首登强改密（FR-AUTH-01）与失败 5 次锁定（NFR-SEC-06）属 V1.6（RBAC 引擎），本版仅校验。
+// 首登强改密（FR-AUTH-01，切片 32）：requiresPasswordChange() 用户须改密后才可进入。
 #pragma once
 
 #include <QDialog>
@@ -27,6 +27,7 @@ private slots:
 
 private:
     void tryLogin();
+    bool forcePasswordChange();   // 切片 32：新密码两次输入校验（取消/失败返 false）
 
     Ui::LoginDialog* ui;
     ens::business::AuthManager* m_auth;

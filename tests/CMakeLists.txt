@@ -34,6 +34,7 @@ add_executable(ens_tests
     unit/test_auth_manager.cpp
     unit/test_auth_security.cpp
     unit/test_user_manage.cpp
+    unit/test_must_change.cpp
     unit/test_rbac.cpp
     unit/test_render_downsampler.cpp
     unit/test_sbo_state_machine.cpp

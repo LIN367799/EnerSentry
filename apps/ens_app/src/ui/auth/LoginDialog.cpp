@@ -5,6 +5,7 @@
 #include "AuthManager.h"
 
 #include <QIcon>
+#include <QInputDialog>
 #include <QMessageBox>
 
 namespace ens::ui {
@@ -48,12 +49,40 @@ void LoginDialog::tryLogin() {
         return;
     }
     if (m_auth->login(user, pass)) {
+        // 切片 32：首登强改密（FR-AUTH-01）——标志用户必须改密后才可进入；取消/失败 → 登出拒绝
+        if (m_auth->requiresPasswordChange() && !forcePasswordChange()) {
+            m_auth->logout();
+            ui->lblError->setProperty("role", "error");
+            ui->lblError->setText(QStringLiteral("首次登录必须修改密码后才能进入系统"));
+            ui->editPass->clear();
+            ui->editPass->setFocus();
+            return;
+        }
         accept();
     } else {
         ui->lblError->setProperty("role", "error");
         ui->lblError->setText(QStringLiteral("用户名或密码错误"));
         ui->editPass->clear();
         ui->editPass->setFocus();
+    }
+}
+
+bool LoginDialog::forcePasswordChange() {
+    while (true) {
+        bool ok = false;
+        const QString np = QInputDialog::getText(
+            this, QStringLiteral("首次登录须修改密码"),
+            QStringLiteral("请输入新密码："), QLineEdit::Password, QString(), &ok);
+        if (!ok || np.isEmpty()) return false;   // 取消/空 → 拒绝进入
+        const QString np2 = QInputDialog::getText(
+            this, QStringLiteral("确认新密码"),
+            QStringLiteral("请再次输入新密码："), QLineEdit::Password, QString(), &ok);
+        if (!ok) return false;
+        if (np == np2) {
+            return m_auth && m_auth->changePassword(m_auth->currentUser(), np);
+        }
+        QMessageBox::warning(this, QStringLiteral("密码不一致"),
+                             QStringLiteral("两次输入的密码不一致，请重新设置。"));
     }
 }
 

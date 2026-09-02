@@ -113,6 +113,7 @@ public:
     struct UserInfo {
         QString  username;
         UserRole role = UserRole::Operator;
+        bool     mustChange = false;   ///< 切片 32：首登强改密标志
     };
     /// 用户列表（不含密码，供 UI 展示）
     QVector<UserInfo> listUsers() const;
@@ -120,10 +121,14 @@ public:
     bool addUser(const QString& username, const QString& password, UserRole role);
     /// 删除用户：禁删当前登录用户（防止自杀锁死会话）
     bool removeUser(const QString& username);
-    /// 改密：随机 salt 重哈希（旧密码立即失效）
+    /// 改密：随机 salt 重哈希（旧密码立即失效）；当前用户改密同时清除首登强改密标志
     bool changePassword(const QString& username, const QString& newPassword);
     /// 写回 users.json（哈希格式，UTF-8）；目录不存在自动创建
     bool saveUsersToJson(const QString& path);
+    /// 设置/清除首登强改密标志（管理员分发初始密码后置位）
+    bool setMustChange(const QString& username, bool must);
+    /// 当前会话用户是否需改密（登录后由 UI 触发强制改密流程，FR-AUTH-01）
+    bool requiresPasswordChange() const;
 
     /// ── 会话锁定（FR-AUTH-05）──
     bool isLocked() const { return m_locked; }
@@ -157,6 +162,7 @@ private:
         QString  username;
         QString  password;   // 明文（旧文件兼容）或 sha256$<salt>$<hex>（NFR-SEC-06）
         UserRole role = UserRole::Operator;
+        bool     mustChange = false;   // 切片 32：首登强改密
     };
     struct FailRec {
         int    count        = 0;

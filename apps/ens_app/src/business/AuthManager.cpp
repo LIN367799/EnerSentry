@@ -75,9 +75,10 @@ bool AuthManager::loadUsersFromJson(const QString& path) {
             for (const QJsonValue& v : arr) {
                 const QJsonObject o = v.toObject();
                 UserRec rec;
-                rec.username = o.value(QStringLiteral("username")).toString();
-                rec.password = o.value(QStringLiteral("password")).toString();
-                rec.role     = roleFromString(o.value(QStringLiteral("role")).toString());
+                rec.username  = o.value(QStringLiteral("username")).toString();
+                rec.password  = o.value(QStringLiteral("password")).toString();
+                rec.role      = roleFromString(o.value(QStringLiteral("role")).toString());
+                rec.mustChange = o.value(QStringLiteral("mustChange")).toBool(false);   // 切片 32
                 if (rec.username.isEmpty() || rec.password.isEmpty()) continue;
                 m_users.push_back(rec);
             }
@@ -274,9 +275,24 @@ QVector<AuthManager::UserInfo> AuthManager::listUsers() const {
     QVector<UserInfo> out;
     out.reserve(m_users.size());
     for (const UserRec& u : m_users) {
-        out.push_back(UserInfo{u.username, u.role});
+        out.push_back(UserInfo{u.username, u.role, u.mustChange});
     }
     return out;
+}
+
+bool AuthManager::setMustChange(const QString& username, bool must) {
+    UserRec* u = const_cast<UserRec*>(findUser(username));
+    if (!u) return false;
+    u->mustChange = must;
+    appendAudit(QStringLiteral("admin"), QStringLiteral("user.mustchange"),
+                username, true);
+    return true;
+}
+
+bool AuthManager::requiresPasswordChange() const {
+    if (!m_loggedIn) return false;
+    const UserRec* u = findUser(m_currentUser);
+    return u != nullptr && u->mustChange;
 }
 
 bool AuthManager::addUser(const QString& username, const QString& password, UserRole role) {
@@ -306,6 +322,7 @@ bool AuthManager::changePassword(const QString& username, const QString& newPass
     UserRec* u = const_cast<UserRec*>(findUser(username));
     if (!u) return false;
     u->password = hashPasswordWithSalt(newPassword, randomSalt());
+    u->mustChange = false;   // 切片 32：改密即清除首登强改密标志
     appendAudit(username, QStringLiteral("user.chpwd"), {}, true);
     return true;
 }
@@ -323,6 +340,7 @@ bool AuthManager::saveUsersToJson(const QString& path) {
         o.insert(QStringLiteral("role"), u.role == UserRole::Admin   ? QStringLiteral("Admin")
                                           : u.role == UserRole::Engineer ? QStringLiteral("Engineer")
                                                                          : QStringLiteral("Operator"));
+        o.insert(QStringLiteral("mustChange"), u.mustChange);   // 切片 32
         arr.append(o);
     }
     QJsonObject root;
