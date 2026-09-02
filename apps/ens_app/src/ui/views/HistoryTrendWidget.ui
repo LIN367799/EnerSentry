@@ -88,6 +88,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnExport">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>导出 CSV</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <spacer name="querySpacer">
        <property name="orientation">
         <enum>Qt::Horizontal</enum>

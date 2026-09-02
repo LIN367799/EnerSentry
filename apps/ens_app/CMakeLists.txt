@@ -114,6 +114,7 @@ target_link_libraries(ens_business PUBLIC ens::datahub ens::protocol ens::export
 add_library(ens_ui STATIC
     src/ui/ui_anchor.cpp
     src/ui/common/theme.cpp
+    src/ui/common/CsvWriter.cpp
     src/ui/auth/LoginDialog.ui
     src/ui/auth/LoginDialog.cpp
     src/ui/auth/SessionLockDialog.ui

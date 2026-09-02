@@ -1,12 +1,20 @@
-// src/ui/views/HistoryTrendWidget.cpp —— 历史趋势实现（切片 24）。
+// src/ui/views/HistoryTrendWidget.cpp —— 历史趋势实现（切片 24 / 切片 34 导出）。
 #include "views/HistoryTrendWidget.h"
 #include "ui_HistoryTrendWidget.h"
 
+#include "common/CsvWriter.h"
 #include "IDataAccess.h"
 #include "PointTable.h"
 
 #include <QDateTime>
+#include <QDir>
+#include <QFileDialog>
+#include <QMessageBox>
 #include <QVBoxLayout>
+
+#include <filesystem>
+#include <iomanip>
+#include <sstream>
 
 #include "qcustomplot.h"
 
@@ -24,12 +32,23 @@ qint64 rangeMsOf(int comboIndex) {
         default: return 3600LL * 1000;   // 1h
     }
 }
+/// float → 精简十进制（%g 语义，避免尾零；工程值范围内无科学计数噪音）
+std::string formatValue(float v) {
+    std::ostringstream ss;
+    ss << std::setprecision(6) << v;
+    return ss.str();
+}
+/// Unix ms → 本地可读时间（导出列）
+std::string formatLocalTime(uint64_t epochMs) {
+    const QDateTime dt = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(epochMs));
+    return dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")).toStdString();
+}
 }  // namespace
 
 HistoryTrendWidget::HistoryTrendWidget(ens::datahub::IDataAccess* dal,
                                        const std::shared_ptr<ens::protocol::PointTable>& pt,
                                        QWidget* parent)
-    : QWidget(parent), ui(new Ui::HistoryTrendWidget), m_dal(dal) {
+    : QWidget(parent), ui(new Ui::HistoryTrendWidget), m_dal(dal), m_pt(pt) {
     ui->setupUi(this);
 
     auto* plot = new QCustomPlot(this);
@@ -47,6 +66,7 @@ HistoryTrendWidget::HistoryTrendWidget(ens::datahub::IDataAccess* dal,
 
     fillPoints(pt);
     connect(ui->btnQuery, &QPushButton::clicked, this, &HistoryTrendWidget::onQueryClicked);
+    connect(ui->btnExport, &QPushButton::clicked, this, &HistoryTrendWidget::onExportClicked);
 }
 
 HistoryTrendWidget::~HistoryTrendWidget() {
@@ -63,6 +83,12 @@ void HistoryTrendWidget::fillPoints(const std::shared_ptr<ens::protocol::PointTa
                                     .arg(QString::fromStdString(p->pointName)));
         m_pointIds.push_back(p->pointId);
     }
+}
+
+std::string HistoryTrendWidget::unitOf(uint32_t pointId) const {
+    if (!m_pt) return {};
+    const ens::protocol::PointRuntime* p = m_pt->pointIdOf(pointId);
+    return p ? p->unit : std::string{};
 }
 
 void HistoryTrendWidget::onQueryClicked() {
@@ -93,10 +119,54 @@ void HistoryTrendWidget::onQueryClicked() {
     plot->rescaleAxes();
     plot->replot(QCustomPlot::rpQueuedReplot);
 
-    ui->lblResult->setText(QStringLiteral("查询完成：%1 个聚合样本（点 %2，粒度 %3）")
+    // 导出上下文（FR-EXP-01）：缓存最近一次成功查询；空结果禁用导出
+    m_hasResult = !rows.empty();
+    m_lastRows = rows;
+    m_lastPointId = pid;
+    m_lastPointName = ui->comboPoint->currentText().toStdString();
+    m_lastGranText = ui->comboGran->currentText().toStdString();
+    ui->btnExport->setEnabled(m_hasResult);
+
+    ui->lblResult->setText(QStringLiteral("查询完成：%1 个聚合样本（点 %2，粒度 %3）%4")
                                .arg(rows.size())
                                .arg(pid)
-                               .arg(ui->comboGran->currentText()));
+                               .arg(ui->comboGran->currentText())
+                               .arg(m_hasResult ? QStringLiteral("，可导出 CSV")
+                                                : QStringLiteral("（无数据，不可导出）")));
+}
+
+void HistoryTrendWidget::onExportClicked() {
+    if (!m_hasResult || m_lastRows.empty()) return;
+
+    const QString defaultName =
+        QStringLiteral("%1_%2.csv")
+            .arg(QString::fromStdString(m_lastPointName).replace(QChar(' '), QStringLiteral("_")))
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出历史趋势 CSV"), defaultName, QStringLiteral("CSV 文件 (*.csv)"));
+    if (path.isEmpty()) return;   // 用户取消
+
+    ens::ui::CsvWriter writer(std::filesystem::path(path.toStdWString()));
+    if (!writer.open()) {
+        QMessageBox::warning(this, QStringLiteral("导出失败"),
+                             QStringLiteral("无法创建文件：\n%1").arg(path));
+        return;
+    }
+
+    writer.writeRow({"时间戳", "测点ID", "测点名称", "数值", "单位"});
+    const std::string unit = unitOf(m_lastPointId);
+    for (const auto& r : m_lastRows) {
+        writer.writeRow({formatLocalTime(r.timestamp),
+                         std::to_string(r.pointId),
+                         m_lastPointName,
+                         formatValue(r.avgValue),
+                         unit});
+    }
+    writer.close();
+
+    ui->lblResult->setText(QStringLiteral("已导出 %1 行 → %2")
+                               .arg(m_lastRows.size())
+                               .arg(QDir::toNativeSeparators(path)));
 }
 
 }  // namespace ens::ui
