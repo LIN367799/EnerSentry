@@ -9,6 +9,7 @@
 
 #include "auth/LoginDialog.h"
 #include "controls/AuditLogDialog.h"
+#include "controls/CriticalAlarmDialog.h"
 #include "controls/UserManagerDialog.h"
 #include "main/MainWindow.h"
 
@@ -50,6 +51,21 @@ TEST_CASE("ui_smoke: audit and user manager dialogs construct",
     um.show();
     pumpEvents();
     um.close();
+    pumpEvents();
+}
+
+TEST_CASE("ui_smoke: critical alarm dialog constructs, shows and closes",
+          "[ui][smoke][tier2]") {
+    ens::business::AlarmEvent ev;
+    ev.id = 1; ev.pointId = 7; ev.level = ens::business::AlarmLevel::Critical;
+    ev.triggerTime = 0; ev.alarmValue = 66.5; ev.threshold = 50.0;
+    ev.description = "point=7 value=66.5 threshold=50";
+
+    ens::ui::CriticalAlarmDialog dlg(ev, QStringLiteral("Rack-01_MaxTemp"));
+    dlg.show();
+    pumpEvents();
+    REQUIRE(dlg.isVisible());
+    dlg.close();
     pumpEvents();
 }
 

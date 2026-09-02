@@ -4,7 +4,9 @@
 
 #include "auth/SessionLockDialog.h"
 #include "charts/RealtimeChartWidget.h"
+#include "common/AlarmNotifier.h"
 #include "controls/AuditLogDialog.h"
+#include "controls/CriticalAlarmDialog.h"
 #include "controls/SBOControlWidget.h"
 #include "controls/UserManagerDialog.h"
 #include "views/ConfigWidget.h"
@@ -18,6 +20,7 @@
 #include "AuthManager.h"
 #include "PointTable.h"   // UiDeps::pointTable shared_ptr 析构需完整类型
 
+#include <QApplication>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QEvent>
@@ -78,6 +81,14 @@ MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
     applyPermissionFilter();   // 切片 26：RBAC 视图裁剪（restore 可能切到越权视图，此处置底）
     qApp->installEventFilter(this);   // 切片 26：全局活动检测 → touchActivity（FR-AUTH-05）
     updateIdentityLabel();
+
+    // ── 切片 37：严重告警声光（FR-AL-06）──
+    // AlarmNotifier 做通知决策（Critical/1s 防抖/风暴抑制），本窗消费信号弹窗+蜂鸣+任务栏闪烁
+    if (m_deps.alarm) {
+        m_notifier = new AlarmNotifier(m_deps.alarm, this);
+        connect(m_notifier, &AlarmNotifier::criticalAlarm,
+                this, &MainWindow::onCriticalAlarm);
+    }
 }
 
 MainWindow::~MainWindow() {
@@ -266,6 +277,28 @@ void MainWindow::saveWindowState() {
 void MainWindow::closeEvent(QCloseEvent* e) {
     saveWindowState();   // 切片 21：窗口几何 + 最后视图持久化
     QMainWindow::closeEvent(e);
+}
+
+// ── 切片 37：FR-AL-06 严重告警声光 ──
+// AlarmNotifier 已决策（Critical + 防抖 + 非风暴）；本槽执行展示：弹窗 + 蜂鸣 + 任务栏闪烁。
+void MainWindow::onCriticalAlarm(const ens::business::AlarmEvent& ev) {
+    QApplication::beep();               // 蜂鸣音
+    QApplication::alert(this);          // 任务栏闪烁（窗口非活动时；活动窗无任务栏态）
+
+    // 非模态红色弹窗：单例复用（防抖窗口内多条 Critical 刷新同实例，不堆叠）
+    QString pointName;
+    if (m_deps.pointTable) {
+        const auto* p = m_deps.pointTable->pointIdOf(ev.pointId);
+        if (p) pointName = QString::fromStdString(p->pointName);
+    }
+    if (m_criticalDlg.isNull()) {
+        m_criticalDlg = new CriticalAlarmDialog(ev, pointName, this);
+        m_criticalDlg->show();
+    } else {
+        m_criticalDlg->setEvent(ev, pointName);
+        m_criticalDlg->raise();
+        m_criticalDlg->activateWindow();
+    }
 }
 
 }  // namespace ens::ui

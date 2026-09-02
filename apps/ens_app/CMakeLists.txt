@@ -116,6 +116,7 @@ add_library(ens_ui STATIC
     src/ui/ui_anchor.cpp
     src/ui/common/theme.cpp
     src/ui/common/CsvWriter.cpp
+    src/ui/common/AlarmNotifier.cpp
     src/ui/auth/LoginDialog.ui
     src/ui/auth/LoginDialog.cpp
     src/ui/auth/SessionLockDialog.ui
@@ -130,6 +131,8 @@ add_library(ens_ui STATIC
     src/ui/controls/SBOControlWidget.cpp
     src/ui/controls/AuditLogDialog.ui
     src/ui/controls/AuditLogDialog.cpp
+    src/ui/controls/CriticalAlarmDialog.ui
+    src/ui/controls/CriticalAlarmDialog.cpp
     src/ui/controls/UserManagerDialog.ui
     src/ui/controls/UserManagerDialog.cpp
     src/ui/views/OverviewWidget.ui

@@ -14,10 +14,13 @@
 
 #include <QLabel>
 #include <QMainWindow>
+#include <QPointer>
 #include <QTimer>
 
 #include <functional>
 #include <memory>
+
+#include "AlarmEntities.h"   // 切片 37：onCriticalAlarm slot 参数（AlarmEvent 完整类型）
 
 namespace ens::channel {
 class IChannel;
@@ -53,6 +56,8 @@ class SBOControlWidget;
 class DiagWidget;
 class ConfigWidget;
 class HistoryTrendWidget;
+class AlarmNotifier;             // 切片 37：严重告警通知决策
+class CriticalAlarmDialog;       // 切片 37：非模态告警弹窗
 
 /// 主窗口依赖聚合（main.cpp 一次构造传入；ens::ui 不触碰 app 层）
 struct UiDeps {
@@ -110,6 +115,7 @@ private slots:
     void onUsersClicked();   // 切片 31：用户管理对话框
     void onAbout();
     void onStatusTick();   // 1s：时钟 + idle 超时检查 + 告警计数
+    void onCriticalAlarm(const ens::business::AlarmEvent& ev);   // 切片 37：FR-AL-06 声光
 
 private:
     void setupViews();
@@ -138,6 +144,10 @@ private:
     QLabel* m_lblUser  = nullptr;
     QTimer  m_statusTimer;
     bool    m_locked = false;
+
+    // 切片 37：严重告警声光（AlarmNotifier 决策 → 弹窗/蜂鸣/任务栏闪烁）
+    AlarmNotifier* m_notifier = nullptr;                    // 子对象（parent this）
+    QPointer<CriticalAlarmDialog> m_criticalDlg;            // 非模态单例（关闭自动置空）
 };
 
 }  // namespace ens::ui
