@@ -154,6 +154,8 @@ public:
     QString alarmRulesPath() const { return m_opts.alarmRulesPath; }
     // 切片 24：历史查询抽象（HistoryTrendWidget 注入；m_dal 未启用时仍可注入，查询返空）
     datahub::IDataAccess* dataAccess() noexcept { return &m_dal; }
+    // 切片 36：告警历史查询抽象（AlarmCenterWidget 注入；dataDir 空时查询返空）
+    datahub::IAlarmAccess* alarmAccess() noexcept { return &m_dal; }
 
 signals:
     void connected();

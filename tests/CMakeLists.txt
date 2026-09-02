@@ -47,6 +47,7 @@ add_executable(ens_tests
     unit/test_alarm_word_io.cpp
     unit/test_alarm_rule_loader.cpp
     unit/test_alarm_record_store.cpp
+    unit/test_alarm_query.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp

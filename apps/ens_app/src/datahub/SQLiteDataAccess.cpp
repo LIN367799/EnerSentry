@@ -538,4 +538,108 @@ bool SQLiteDataAccess::setAlarmConfirmed(uint64_t triggerTime, uint64_t alarmId,
     return true;
 }
 
+// ─────────────────────────── 告警历史查询（切片 36，FR-AL-11）───────────────────────────
+
+std::vector<AlarmRecord> SQLiteDataAccess::queryAlarms(const AlarmQueryFilter& f) {
+    std::vector<AlarmRecord> out;
+    const uint64_t begin = f.beginMs;
+    const uint64_t end   = (f.endMs == 0) ? static_cast<uint64_t>(
+                                QDateTime::currentMSecsSinceEpoch())
+                                          : f.endMs;
+    if (begin >= end) return out;                          // 边界：空区间
+
+    // 跨月路由：从 begin 所在月起逐月推进（告警库布局：alarm/YYYYMM/alarm_YYYYMM.db）
+    QDateTime cur = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(begin));
+    cur.setDate(QDate(cur.date().year(), cur.date().month(), 1));
+    cur.setTime(QTime(0, 0, 0));
+    while (cur.toMSecsSinceEpoch() < static_cast<qint64>(end)) {
+        const uint64_t monthStart = static_cast<uint64_t>(cur.toMSecsSinceEpoch());
+        const QDateTime nextMonth = cur.addMonths(1);
+        const uint64_t monthEnd   = static_cast<uint64_t>(nextMonth.toMSecsSinceEpoch());
+        const uint64_t qBegin = std::max(begin, monthStart);
+        const uint64_t qEnd   = std::min(end, monthEnd);
+        if (qBegin >= qEnd) {
+            cur = nextMonth;
+            continue;
+        }
+
+        const QString dbPath = getAlarmDatabasePath(m_dataRootDir, qBegin);
+        // 查询路径不建库：文件不存在（该月无告警）直接跳过，防"全部范围"逐月 680 次 open
+        if (!QFileInfo::exists(dbPath)) {
+            cur = nextMonth;
+            continue;
+        }
+        if (!m_connForPath.contains(dbPath) && !openAlarmMonth(qBegin)) {
+            cur = nextMonth;                               // 打开失败：跳过该月
+            continue;
+        }
+        QSqlDatabase& db = m_connForPath[dbPath];
+        const QString table = alarmTableNameOf(qBegin);
+        if (table.isEmpty()) {
+            cur = nextMonth;
+            continue;
+        }
+        // WHERE 组合（值全部 bind；表名/列名为常量，无注入面）
+        QStringList cond;
+        cond << QStringLiteral("trigger_time>=?") << QStringLiteral("trigger_time<?");
+        if (f.pointId != 0) cond << QStringLiteral("point_id=?");
+        if (f.level >= 0)   cond << QStringLiteral("level=?");
+        if (f.status >= 0)  cond << QStringLiteral("status=?");
+        QString sql = QStringLiteral(
+            "SELECT id, point_id, level, status, trigger_time, recover_time,"
+            " confirm_user, confirm_time, alarm_value, threshold, description, blackbox_id"
+            " FROM %1 WHERE %2 ORDER BY trigger_time DESC")
+                          .arg(table, cond.join(QStringLiteral(" AND ")));
+        if (f.limit > 0) sql += QStringLiteral(" LIMIT %1").arg(f.limit);
+
+        QSqlQuery q(db);
+        q.prepare(sql);
+        if (q.lastError().isValid()) {
+            qWarning("SQLiteDataAccess: alarm query PREPARE failed: %s",
+                     qUtf8Printable(q.lastError().text()));
+            cur = nextMonth;
+            continue;
+        }
+        q.addBindValue(QVariant(static_cast<qlonglong>(qBegin)));
+        q.addBindValue(QVariant(static_cast<qlonglong>(qEnd)));
+        if (f.pointId != 0) q.addBindValue(QVariant(static_cast<qlonglong>(f.pointId)));
+        if (f.level >= 0)   q.addBindValue(QVariant(f.level));
+        if (f.status >= 0)  q.addBindValue(QVariant(f.status));
+        q.exec();
+        if (q.lastError().isValid()) {
+            qWarning("SQLiteDataAccess: alarm query failed: %s",
+                     qUtf8Printable(q.lastError().text()));
+            cur = nextMonth;
+            continue;
+        }
+        while (q.next()) {
+            AlarmRecord r;
+            r.id          = static_cast<uint64_t>(q.value(0).toLongLong());
+            r.pointId     = static_cast<uint32_t>(q.value(1).toInt());
+            r.level       = q.value(2).toInt();
+            r.status      = q.value(3).toInt();
+            r.triggerTime = static_cast<uint64_t>(q.value(4).toLongLong());
+            r.recoverTime = static_cast<uint64_t>(q.value(5).toLongLong());
+            r.confirmUser = q.value(6).toString();
+            r.confirmTime = static_cast<uint64_t>(q.value(7).toLongLong());
+            r.alarmValue  = q.value(8).toDouble();
+            r.threshold   = q.value(9).toDouble();
+            r.description = q.value(10).toString();
+            r.blackboxId  = static_cast<uint64_t>(q.value(11).toLongLong());
+            out.push_back(r);
+        }
+        cur = nextMonth;
+    }
+
+    // 跨月合并后整体按触发时间降序（LIMIT 已每库下推，此处按需再截断）
+    std::sort(out.begin(), out.end(),
+              [](const AlarmRecord& a, const AlarmRecord& b) {
+                  return a.triggerTime > b.triggerTime;
+              });
+    if (f.limit > 0 && static_cast<int>(out.size()) > f.limit) {
+        out.resize(static_cast<size_t>(f.limit));
+    }
+    return out;
+}
+
 }  // namespace ens::datahub

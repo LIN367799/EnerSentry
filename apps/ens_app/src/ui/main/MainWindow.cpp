@@ -110,7 +110,10 @@ void MainWindow::setupViews() {
     }
 
     m_overview  = new OverviewWidget(m_deps.bus, this);
-    m_alarmView = new AlarmCenterWidget(m_deps.alarm, this);
+    // 切片 36：告警中心完整版（历史筛选/确认/导出；currentUser 供确认人记录，auth 空则禁用）
+    m_alarmView = new AlarmCenterWidget(
+        m_deps.alarm, m_deps.alarmAccess, m_deps.pointTable,
+        [this]() { return m_deps.auth ? m_deps.auth->currentUser() : QString(); }, this);
     m_chart     = new RealtimeChartWidget(m_deps.bus, this);
     m_sboView   = new SBOControlWidget(m_deps.sbo, m_deps.sboSelect, m_deps.sboOperate,
                                        m_deps.sboCancel, this);

@@ -37,6 +37,7 @@ struct SboSelectRequest;
 namespace ens::datahub {
 class DataBus;
 class IDataAccess;
+class IAlarmAccess;
 }  // namespace ens::datahub
 
 namespace Ui {
@@ -77,6 +78,8 @@ struct UiDeps {
     int     pollMs = 0;
     // 切片 24：历史查询（HistoryTrendWidget）
     ens::datahub::IDataAccess* dataAccess = nullptr;
+    // 切片 36：告警历史查询（AlarmCenterWidget，FR-AL-11；未启用 --data-dir 时查询返空）
+    ens::datahub::IAlarmAccess* alarmAccess = nullptr;
     // 切片 31：用户表路径（UserManagerDialog 保存目标）
     QString usersPath;
 

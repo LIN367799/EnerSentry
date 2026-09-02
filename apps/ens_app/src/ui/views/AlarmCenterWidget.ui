@@ -7,12 +7,100 @@
     <x>0</x>
     <y>0</y>
     <width>1000</width>
-    <height>520</height>
+    <height>540</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="rootLayout">
    <item>
-    <layout class="QHBoxLayout" name="topLayout">
+    <layout class="QHBoxLayout" name="queryLayout">
+     <item>
+      <widget class="QLabel" name="lblLevel">
+       <property name="text">
+        <string>级别</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboLevel"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblStatus">
+       <property name="text">
+        <string>状态</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboStatus"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblPoint">
+       <property name="text">
+        <string>测点</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboPoint">
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>0</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="lblRange">
+       <property name="text">
+        <string>范围</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="comboRange"/>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnQuery">
+       <property name="text">
+        <string>查询</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnConfirm">
+       <property name="text">
+        <string>确认选中</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btnExport">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
+       <property name="text">
+        <string>导出 CSV</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="querySpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>20</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="activeLayout">
      <item>
       <widget class="QLabel" name="lblActiveTitle">
        <property name="text">
@@ -28,7 +116,14 @@
       </widget>
      </item>
      <item>
-      <spacer name="topSpacer">
+      <widget class="QLabel" name="lblHint">
+       <property name="text">
+        <string>查询最近告警历史（数据来自告警库 alarm/YYYYMM）</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="activeSpacer">
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
        </property>
@@ -52,6 +147,9 @@
      </property>
      <property name="selectionBehavior">
       <enum>QAbstractItemView::SelectRows</enum>
+     </property>
+     <property name="selectionMode">
+      <enum>QAbstractItemView::ExtendedSelection</enum>
      </property>
     </widget>
    </item>
