@@ -43,6 +43,25 @@ uint64_t monthStartFromDbPath(const QString& dbPath) {
     return static_cast<uint64_t>(dt.toMSecsSinceEpoch());
 }
 
+/// 从 dbPath(file: .../alarm_YYYYMM.db)反推月初时间戳(供 ensureAlarmSchema 内部建表)
+uint64_t alarmMonthFromDbPath(const QString& dbPath) {
+    const int slash = dbPath.lastIndexOf('/');
+    const QString filename = (slash >= 0) ? dbPath.mid(slash + 1) : dbPath;
+    if (!filename.startsWith(QStringLiteral("alarm_"))) return 0;
+    const QString yyyymm = filename.mid(6, 6);          // 跳过 "alarm_"
+    const QDateTime dt = QDateTime::fromString(yyyymm, QStringLiteral("yyyyMM"));
+    if (!dt.isValid()) return 0;
+    return static_cast<uint64_t>(dt.toMSecsSinceEpoch());
+}
+
+/// 时间戳 → 告警表名(alarm_record_YYYYMM)
+QString alarmTableNameOf(uint64_t timestamp) {
+    if (timestamp == 0 || timestamp > kMaxSaneTs) return {};
+    const QDateTime dt = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(timestamp));
+    if (!dt.isValid()) return {};
+    return QStringLiteral("alarm_record_%1").arg(dt.toString(QStringLiteral("yyyyMM")));
+}
+
 }  // namespace
 
 SQLiteDataAccess::SQLiteDataAccess(const QString& dataRootDir, QObject* parent)
@@ -305,6 +324,218 @@ std::vector<DownSampledSample> SQLiteDataAccess::queryRange(uint32_t pointId,
         cur = nextMonth;
     }
     return out;
+}
+
+// ─────────────────────────── 告警库（切片 35，DBDD §4.4）───────────────────────────
+
+bool SQLiteDataAccess::openAlarmMonth(uint64_t timestamp) {
+    if (timestamp == 0 || timestamp > kMaxSaneTs) {
+        qWarning("SQLiteDataAccess: openAlarmMonth invalid timestamp %llu",
+                 static_cast<unsigned long long>(timestamp));
+        return false;
+    }
+    const QString dbPath = getAlarmDatabasePath(m_dataRootDir, timestamp);
+    if (m_connForPath.contains(dbPath)) return true;     // 已打开
+
+    const QString connName = makeConnName();
+    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connName);
+    db.setDatabaseName(dbPath);
+    if (!db.open()) {
+        qWarning("SQLiteDataAccess: openAlarmMonth failed: %s | err=%s",
+                 qUtf8Printable(dbPath), qUtf8Printable(db.lastError().text()));
+        db = QSqlDatabase();
+        QSqlDatabase::removeDatabase(connName);
+        return false;
+    }
+    if (!applyPragmas(db)) {
+        db.close();
+        db = QSqlDatabase();
+        QSqlDatabase::removeDatabase(connName);
+        return false;
+    }
+    m_connForPath.insert(dbPath, db);
+    if (!ensureAlarmSchema(dbPath)) {
+        m_connForPath.remove(dbPath);
+        db = QSqlDatabase();
+        QSqlDatabase::removeDatabase(connName);
+        return false;
+    }
+    return true;
+}
+
+bool SQLiteDataAccess::ensureAlarmSchema(const QString& dbPath) {
+    if (!m_connForPath.contains(dbPath)) {
+        // 无连接：先打开（openAlarmMonth 内部会再调本函数，届时已有连接 → 走建表分支）
+        const uint64_t ts = alarmMonthFromDbPath(dbPath);
+        if (ts == 0) {
+            qWarning("SQLiteDataAccess: ensureAlarmSchema cannot parse YYYYMM from dbPath: %s",
+                     qUtf8Printable(dbPath));
+            return false;
+        }
+        return openAlarmMonth(ts);
+    }
+    QSqlDatabase& db = m_connForPath[dbPath];
+    const uint64_t ts = alarmMonthFromDbPath(dbPath);
+    if (ts == 0) {
+        qWarning("SQLiteDataAccess: ensureAlarmSchema cannot parse YYYYMM from dbPath: %s",
+                 qUtf8Printable(dbPath));
+        return false;
+    }
+    const QString table = alarmTableNameOf(ts);
+    const QString ddl = QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS %1 ("
+        "  id            INTEGER PRIMARY KEY,"
+        "  point_id      INTEGER NOT NULL,"
+        "  level         INTEGER NOT NULL,"
+        "  status        INTEGER NOT NULL DEFAULT 0,"
+        "  trigger_time  INTEGER NOT NULL,"
+        "  recover_time  INTEGER NOT NULL DEFAULT 0,"
+        "  confirm_user  TEXT,"
+        "  confirm_time  INTEGER NOT NULL DEFAULT 0,"
+        "  alarm_value   REAL    NOT NULL,"
+        "  threshold     REAL    NOT NULL,"
+        "  description   TEXT,"
+        "  blackbox_id   INTEGER NOT NULL DEFAULT 0,"
+        "  CONSTRAINT chk_level  CHECK (level  BETWEEN 0 AND 2),"
+        "  CONSTRAINT chk_status CHECK (status BETWEEN 0 AND 2)"
+        ")").arg(table);
+    db.exec(ddl);
+    if (db.lastError().isValid()) {
+        qWarning("SQLiteDataAccess: CREATE TABLE %s failed: %s",
+                 qUtf8Printable(table), qUtf8Printable(db.lastError().text()));
+        return false;
+    }
+    const QStringList indexes = {
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_alarm_point_tr ON %1 (point_id, trigger_time)").arg(table),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_alarm_lv_st   ON %1 (level, status)").arg(table),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_alarm_trigger ON %1 (trigger_time)").arg(table),
+    };
+    for (const QString& idx : indexes) {
+        db.exec(idx);
+        if (db.lastError().isValid()) {
+            qWarning("SQLiteDataAccess: CREATE INDEX on %s failed: %s",
+                     qUtf8Printable(table), qUtf8Printable(db.lastError().text()));
+            return false;
+        }
+    }
+    return true;
+}
+
+bool SQLiteDataAccess::insertAlarmRecords(const std::vector<AlarmRecord>& records) {
+    if (records.empty()) return true;                    // 边界：空批 = no-op
+    const uint64_t ts = records.front().triggerTime;
+    if (ts == 0 || ts > kMaxSaneTs) {
+        qWarning("SQLiteDataAccess: insertAlarmRecords invalid triggerTime");
+        return false;
+    }
+    const QString dbPath = getAlarmDatabasePath(m_dataRootDir, ts);
+    if (!m_connForPath.contains(dbPath)) {
+        if (!openAlarmMonth(ts)) return false;
+    }
+    QSqlDatabase& db = m_connForPath[dbPath];
+    const QString table = alarmTableNameOf(ts);
+    if (table.isEmpty() || !ensureAlarmSchema(dbPath)) return false;
+
+    enterWriteBatch();
+    if (!db.transaction()) {
+        qWarning("SQLiteDataAccess: alarm BEGIN failed: %s",
+                 qUtf8Printable(db.lastError().text()));
+        leaveWriteBatch();
+        return false;
+    }
+    const QString sql = QStringLiteral(
+        "INSERT INTO %1 (id, point_id, level, status, trigger_time, recover_time,"
+        " confirm_user, confirm_time, alarm_value, threshold, description, blackbox_id)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").arg(table);
+    QSqlQuery q(db);
+    q.prepare(sql);
+    if (q.lastError().isValid()) {
+        qWarning("SQLiteDataAccess: alarm PREPARE failed: %s",
+                 qUtf8Printable(q.lastError().text()));
+        db.rollback();
+        leaveWriteBatch();
+        return false;
+    }
+    for (const auto& r : records) {
+        q.addBindValue(QVariant(static_cast<qlonglong>(r.id)));
+        q.addBindValue(QVariant(static_cast<qlonglong>(r.pointId)));
+        q.addBindValue(QVariant(r.level));
+        q.addBindValue(QVariant(r.status));
+        q.addBindValue(QVariant(static_cast<qlonglong>(r.triggerTime)));
+        q.addBindValue(QVariant(static_cast<qlonglong>(r.recoverTime)));
+        q.addBindValue(QVariant(r.confirmUser));
+        q.addBindValue(QVariant(static_cast<qlonglong>(r.confirmTime)));
+        q.addBindValue(QVariant(r.alarmValue));
+        q.addBindValue(QVariant(r.threshold));
+        q.addBindValue(QVariant(r.description));
+        q.addBindValue(QVariant(static_cast<qlonglong>(r.blackboxId)));
+        if (!q.exec()) {
+            qWarning("SQLiteDataAccess: alarm INSERT failed: %s",
+                     qUtf8Printable(q.lastError().text()));
+            db.rollback();
+            leaveWriteBatch();
+            return false;
+        }
+    }
+    if (!db.commit()) {
+        qWarning("SQLiteDataAccess: alarm COMMIT failed: %s",
+                 qUtf8Printable(db.lastError().text()));
+        db.rollback();
+        leaveWriteBatch();
+        return false;
+    }
+    leaveWriteBatch();
+    return true;
+}
+
+bool SQLiteDataAccess::setAlarmRecovered(uint64_t triggerTime, uint64_t alarmId,
+                                         uint64_t recoverTime) {
+    if (triggerTime == 0 || triggerTime > kMaxSaneTs) return false;
+    const QString dbPath = getAlarmDatabasePath(m_dataRootDir, triggerTime);
+    if (!m_connForPath.contains(dbPath)) {
+        if (!openAlarmMonth(triggerTime)) return false;
+    }
+    QSqlDatabase& db = m_connForPath[dbPath];
+    const QString table = alarmTableNameOf(triggerTime);
+    if (table.isEmpty()) return false;
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "UPDATE %1 SET status=2, recover_time=? WHERE id=?").arg(table));
+    q.addBindValue(QVariant(static_cast<qlonglong>(recoverTime)));
+    q.addBindValue(QVariant(static_cast<qlonglong>(alarmId)));
+    q.exec();
+    if (q.lastError().isValid()) {
+        qWarning("SQLiteDataAccess: alarm RECOVER update failed: %s",
+                 qUtf8Printable(q.lastError().text()));
+        return false;
+    }
+    return true;                                          // 无行命中（重启边界）幂等 true
+}
+
+bool SQLiteDataAccess::setAlarmConfirmed(uint64_t triggerTime, uint64_t alarmId,
+                                         const QString& user, uint64_t confirmTime) {
+    if (triggerTime == 0 || triggerTime > kMaxSaneTs) return false;
+    const QString dbPath = getAlarmDatabasePath(m_dataRootDir, triggerTime);
+    if (!m_connForPath.contains(dbPath)) {
+        if (!openAlarmMonth(triggerTime)) return false;
+    }
+    QSqlDatabase& db = m_connForPath[dbPath];
+    const QString table = alarmTableNameOf(triggerTime);
+    if (table.isEmpty()) return false;
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "UPDATE %1 SET status=1, confirm_user=?, confirm_time=? "
+        "WHERE id=? AND status=0").arg(table));
+    q.addBindValue(QVariant(user));
+    q.addBindValue(QVariant(static_cast<qlonglong>(confirmTime)));
+    q.addBindValue(QVariant(static_cast<qlonglong>(alarmId)));
+    q.exec();
+    if (q.lastError().isValid()) {
+        qWarning("SQLiteDataAccess: alarm CONFIRM update failed: %s",
+                 qUtf8Printable(q.lastError().text()));
+        return false;
+    }
+    return true;
 }
 
 }  // namespace ens::datahub

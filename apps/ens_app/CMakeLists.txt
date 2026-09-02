@@ -97,6 +97,7 @@ add_library(ens_business SHARED
     src/business/business_anchor.cpp
     src/business/BusinessStateMachine.cpp
     src/business/AlarmEngine.cpp
+    src/business/AlarmRecordStore.cpp
     src/business/AlarmRuleLoader.cpp
     src/business/AuthManager.cpp
     src/business/DeviceSboGuard.cpp

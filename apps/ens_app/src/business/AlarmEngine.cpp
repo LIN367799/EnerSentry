@@ -359,13 +359,12 @@ void AlarmEngine::acknowledgeAlarm(uint64_t alarmId, const QString& user) {
     for (auto& [pid, st] : m_states) {
         if (st.activeId == alarmId && st.status == AlarmStatus::Active) {
             st.status = AlarmStatus::Confirmed;
-            emit alarmAcknowledged(alarmId);
+            emit alarmAcknowledged(alarmId, user);   // 切片 35：带确认人（审计/落库）
             return;
         }
     }
     // 未找到：仍发 acknowledged（幂等）；上层按需处理
-    emit alarmAcknowledged(alarmId);
-    (void)user;
+    emit alarmAcknowledged(alarmId, user);
 }
 
 void AlarmEngine::acknowledgeAlarms(const std::vector<uint64_t>& ids, const QString& user) {

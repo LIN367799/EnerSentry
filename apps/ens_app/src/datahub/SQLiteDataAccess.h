@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "AlarmRecord.h"
 #include "DownSampler.h"
 
 #include <cstdint>
@@ -58,6 +59,22 @@ public:
     /// 获取或打开某月库的连接(首次打开时应用 PRAGMA + ensureSchema)
     /// @return true 成功;false 打开失败(目录权限/磁盘满等)
     bool openMonth(uint64_t timestamp);
+
+    // ── 告警库（切片 35，DBDD §4.4：alarm_YYYYMM.db 静态隔离）──
+    /// 数据根目录（告警库同样落于其下 alarm/YYYYMM/；空 = 未启用落库）
+    QString dataRootDir() const { return m_dataRootDir; }
+    /// 打开某月告警库连接（PRAGMA + ensureAlarmSchema 建表）；返回 false 打开/建表失败
+    bool openAlarmMonth(uint64_t timestamp);
+    /// 建表 alarm_record_YYYYMM + 3 索引（DBDD §4.4 DDL 原样）；表已存在则跳过
+    bool ensureAlarmSchema(const QString& dbPath);
+    /// 批量 INSERT 告警记录（单事务）；按首条 triggerTime 路由月份，调用方保证同月
+    /// @return true 全部成功；false 任一失败（事务已回滚）
+    bool insertAlarmRecords(const std::vector<AlarmRecord>& records);
+    /// 恢复回填：status→2 + recover_time（幂等；WHERE id 无行则 no-op 返回 true）
+    bool setAlarmRecovered(uint64_t triggerTime, uint64_t alarmId, uint64_t recoverTime);
+    /// 确认回填：仅 Active(status=0)→Confirmed(status=1) + confirm_user/time（已恢复不翻转）
+    bool setAlarmConfirmed(uint64_t triggerTime, uint64_t alarmId, const QString& user,
+                           uint64_t confirmTime);
 
     /// 关闭所有打开的连接(析构时自动调用)
     void closeAll();

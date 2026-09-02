@@ -245,6 +245,7 @@ EnerSentryApp::EnerSentryApp(const Options& opts, QObject* parent)
       m_bbx(&m_l1),                 // 切片 16：黑匣子依赖 L1 快照
       m_dal(opts.dataDir),          // 月库根目录（空 = 不落盘）
       m_l2(&m_dal),
+      m_alarmStore(&m_alarm, &m_dal),   // 切片 35：告警落库（dataDir 空自动禁用）
       m_engine(&m_channel, protocol::Transport::Tcp) {}
 
 EnerSentryApp::~EnerSentryApp() {

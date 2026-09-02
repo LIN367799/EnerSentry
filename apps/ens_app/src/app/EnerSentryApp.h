@@ -34,6 +34,7 @@
 #include "L1SnapshotStore.h"
 #include "DataBus.h"
 #include "AlarmEngine.h"
+#include "AlarmRecordStore.h"
 #include "AlarmRuleLoader.h"
 #include "BlackBoxManager.h"
 #include "DownSampler.h"
@@ -190,6 +191,8 @@ private:
     datahub::L2HistoryStore  m_l2;           // &m_dal
     business::DeviceSboGuard m_sboGuard;
     business::SboStateMachine m_sbo;         // setGuard(&m_sboGuard) 在 start()
+    // 切片 35：告警记录持久化（&m_alarm + &m_dal；dataDir 空 → 自动禁用）
+    business::AlarmRecordStore m_alarmStore;
     QTimer                   m_consumeTimer;  // 主线程 50ms 消费节拍
     QTimer                   m_flushTimer;    // 主线程 1s 月库 flush
 

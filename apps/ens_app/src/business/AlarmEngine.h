@@ -72,7 +72,8 @@ private slots:
 signals:
     void alarmTriggered(const AlarmEvent&);
     void alarmRecovered(uint64_t alarmId);
-    void alarmAcknowledged(uint64_t alarmId);
+    /// 切片 35：确认事件带操作人（FR-AL-13 审计字段；AlarmRecordStore 落 confirm_user）
+    void alarmAcknowledged(uint64_t alarmId, const QString& user);
     /// Critical 触发 → 外部 connect 到 BlackBoxManager::triggerBlackBox
     /// （依赖倒置：业务层不直接持 datahub 引用）
     /// @param level 告警级别（切片 16：黑匣子落盘需区分 Critical/非 Critical 处置）
