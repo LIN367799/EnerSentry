@@ -132,9 +132,11 @@ void MainWindow::setupViews() {
     m_sboView   = new SBOControlWidget(m_deps.sbo, m_deps.sboSelect, m_deps.sboOperate,
                                        m_deps.sboCancel, this);
     m_diagView  = new DiagWidget(m_deps.channel, this);
+    // 切片 41：Config 增导出/备份源（点表路径 + 数据根；空则对应按钮禁用）
     m_configView = new ConfigWidget(m_deps.pointTable, m_deps.alarmRulesPath,
                                     m_deps.alarmRuleCount, m_deps.host, m_deps.port,
-                                    m_deps.pollMs, this);
+                                    m_deps.pollMs, m_deps.pointTablePath,
+                                    m_deps.dataRootDir, this);
     m_historyView = new HistoryTrendWidget(m_deps.dataAccess, m_deps.pointTable, this);
     ui->centralStack->addWidget(m_overview);    // 0 总览
     ui->centralStack->addWidget(m_chart);       // 1 实时曲线（切片 20）

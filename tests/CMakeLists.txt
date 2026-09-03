@@ -52,6 +52,7 @@ add_executable(ens_tests
     unit/test_replay.cpp
     unit/test_realtime_interact.cpp
     unit/test_overview_gauges.cpp
+    unit/test_export_utils.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp

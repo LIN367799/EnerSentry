@@ -3,6 +3,8 @@
 
 #include "charts/RealtimePlotWidget.h"
 
+#include <QDateTime>
+#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
@@ -33,6 +35,9 @@ RealtimeChartWidget::RealtimeChartWidget(ens::datahub::DataBus* bus, QWidget* pa
     m_btnRuler->setCheckable(true);
     m_btnRuler->setToolTip(QStringLiteral("FR-RT-07：垂直标尺，拖动读取全部通道数值"));
     top->addWidget(m_btnRuler);
+    auto* pngBtn = new QPushButton(QStringLiteral("截图 PNG"), this);
+    pngBtn->setToolTip(QStringLiteral("FR-EXP-02：导出曲线截图"));
+    top->addWidget(pngBtn);
     auto* hint = new QLabel(QStringLiteral(
         "实时曲线（30Hz 批处理 + min/max 降采样；悬停读值；列表勾选分配右轴）"), this);
     hint->setStyleSheet(QStringLiteral("color: #8b949e; padding: 2px 6px;"));
@@ -50,6 +55,7 @@ RealtimeChartWidget::RealtimeChartWidget(ens::datahub::DataBus* bus, QWidget* pa
     root->addLayout(body, 1);
 
     connect(m_btnRuler, &QPushButton::toggled, this, &RealtimeChartWidget::onRulerToggled);
+    connect(pngBtn, &QPushButton::clicked, this, &RealtimeChartWidget::onPngClicked);
     connect(m_plot, &RealtimePlotWidget::channelAdded,
             this, &RealtimeChartWidget::onChannelAdded);
     connect(m_chList, &QListWidget::itemChanged,
@@ -110,6 +116,18 @@ void RealtimeChartWidget::onChannelItemChanged(QListWidgetItem* item) {
 
 void RealtimeChartWidget::onRulerToggled(bool checked) {
     m_plot->setRulerEnabled(checked);
+}
+
+void RealtimeChartWidget::onPngClicked() {
+    // 切片 41：FR-EXP-02 实时曲线截图
+    if (m_plot->channelCount() == 0) return;
+    const QString defaultName = QStringLiteral("realtime_%1.png").arg(
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出实时曲线 PNG"), defaultName,
+        QStringLiteral("PNG 图片 (*.png)"));
+    if (path.isEmpty()) return;
+    m_plot->savePng(path);
 }
 
 }  // namespace ens::ui

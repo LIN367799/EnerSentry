@@ -327,6 +327,11 @@ void RealtimePlotWidget::updateReadout(double xKey) {
     m_plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
+bool RealtimePlotWidget::savePng(const QString& path) const {
+    // FR-EXP-02：QCustomPlot 直接离线渲染（无需窗口可见）
+    return m_plot->savePng(path, 0, 0, 1.0, -1);
+}
+
 void RealtimePlotWidget::setRulerEnabled(bool on) {
     if (on == m_rulerOn) return;
     m_rulerOn = on;

@@ -67,6 +67,7 @@ HistoryTrendWidget::HistoryTrendWidget(ens::datahub::IDataAccess* dal,
     fillPoints(pt);
     connect(ui->btnQuery, &QPushButton::clicked, this, &HistoryTrendWidget::onQueryClicked);
     connect(ui->btnExport, &QPushButton::clicked, this, &HistoryTrendWidget::onExportClicked);
+    connect(ui->btnPng, &QPushButton::clicked, this, &HistoryTrendWidget::onPngClicked);
 }
 
 HistoryTrendWidget::~HistoryTrendWidget() {
@@ -126,12 +127,13 @@ void HistoryTrendWidget::onQueryClicked() {
     m_lastPointName = ui->comboPoint->currentText().toStdString();
     m_lastGranText = ui->comboGran->currentText().toStdString();
     ui->btnExport->setEnabled(m_hasResult);
+    ui->btnPng->setEnabled(m_hasResult);   // 切片 41：截图与 CSV 同启用条件
 
     ui->lblResult->setText(QStringLiteral("查询完成：%1 个聚合样本（点 %2，粒度 %3）%4")
                                .arg(rows.size())
                                .arg(pid)
                                .arg(ui->comboGran->currentText())
-                               .arg(m_hasResult ? QStringLiteral("，可导出 CSV")
+                               .arg(m_hasResult ? QStringLiteral("，可导出 CSV/PNG")
                                                 : QStringLiteral("（无数据，不可导出）")));
 }
 
@@ -167,6 +169,26 @@ void HistoryTrendWidget::onExportClicked() {
     ui->lblResult->setText(QStringLiteral("已导出 %1 行 → %2")
                                .arg(m_lastRows.size())
                                .arg(QDir::toNativeSeparators(path)));
+}
+
+void HistoryTrendWidget::onPngClicked() {
+    // 切片 41：FR-EXP-02 曲线截图（QCustomPlot 离线渲染 PNG）
+    if (!m_hasResult) return;
+    QCustomPlot* plot = qobject_cast<QCustomPlot*>(ui->plotLayout->itemAt(0)->widget());
+    if (!plot) return;
+    const QString defaultName =
+        QStringLiteral("%1_%2.png")
+            .arg(QString::fromStdString(m_lastPointName).replace(QChar(' '), QStringLiteral("_")))
+            .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出历史趋势 PNG"), defaultName, QStringLiteral("PNG 图片 (*.png)"));
+    if (path.isEmpty()) return;
+    if (plot->savePng(path)) {
+        ui->lblResult->setText(QStringLiteral("已导出截图 → %1")
+                                   .arg(QDir::toNativeSeparators(path)));
+    } else {
+        ui->lblResult->setText(QStringLiteral("截图导出失败：%1").arg(path));
+    }
 }
 
 }  // namespace ens::ui

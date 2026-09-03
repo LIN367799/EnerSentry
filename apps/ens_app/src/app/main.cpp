@@ -171,6 +171,8 @@ int main(int argc, char* argv[]) {
     deps.alarmAccess = es.alarmAccess(); // 切片 36：告警历史查询（FR-AL-11）
     deps.l1Replay = es.l1Replay();       // 切片 38：L1 高频回放（FR-AL-12）
     deps.usersPath = parser.value(usersOpt);   // 切片 31：用户管理保存目标
+    deps.pointTablePath = opts.pointTablePath; // 切片 41：配置导出源（FR-EXP-06）
+    deps.dataRootDir = opts.dataDir;           // 切片 41：历史库备份根（FR-EXP-05）
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
 
     ens::ui::MainWindow w(deps);

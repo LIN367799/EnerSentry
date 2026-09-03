@@ -40,6 +40,7 @@ public:
 private slots:
     void onQueryClicked();
     void onExportClicked();
+    void onPngClicked();   // 切片 41：FR-EXP-02 曲线截图 PNG
 
 private:
     void fillPoints(const std::shared_ptr<ens::protocol::PointTable>& pt);

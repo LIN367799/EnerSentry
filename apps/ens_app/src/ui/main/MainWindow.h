@@ -90,6 +90,9 @@ struct UiDeps {
     ens::datahub::IL1SnapshotReader* l1Replay = nullptr;
     // 切片 31：用户表路径（UserManagerDialog 保存目标）
     QString usersPath;
+    // 切片 41：配置导出源路径（FR-EXP-06）/ 历史告警库备份根（FR-EXP-05；--data-dir）
+    QString pointTablePath;
+    QString dataRootDir;
 
     QString linkLabel;      // 状态栏：连接标识
 };

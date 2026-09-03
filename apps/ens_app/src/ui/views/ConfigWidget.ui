@@ -163,6 +163,77 @@
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="tabExport">
+      <attribute name="title">
+       <string>导出 / 备份</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="exportLayout">
+       <item>
+        <widget class="QLabel" name="lblExportIntro">
+         <property name="text">
+          <string>导出当前点表与告警规则 JSON（FR-EXP-06）；备份历史/告警 SQLite 月库到指定目录（FR-EXP-05）。</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="exportBtns">
+         <item>
+          <widget class="QPushButton" name="btnExportCfg">
+           <property name="text">
+            <string>导出配置 JSON</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="btnBackupData">
+           <property name="text">
+            <string>备份历史数据</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="exportSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="lblExportNote">
+         <property name="text">
+          <string>选择目标目录后执行。</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="exportSpacer2">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

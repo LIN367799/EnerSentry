@@ -76,6 +76,10 @@ public:
     /// 立即刷一帧（生产由 30Hz timer 驱动；测试/外部显式触发用）
     void refreshNow() { onBatchRepaint(); }
 
+    /// FR-EXP-02：曲线区截图存 PNG（内部 QCustomPlot::savePng，含暗色样式）
+    /// @param path 输出 .png 路径；@return true 成功
+    bool savePng(const QString& path) const;
+
 signals:
     void channelAdded(uint32_t pointId, const QString& name);   // ChartWidget 同步列表
 

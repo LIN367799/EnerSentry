@@ -50,6 +50,7 @@ private slots:
     void onChannelAdded(uint32_t pointId, const QString& name);   // plot → 列表行
     void onChannelItemChanged(QListWidgetItem* item);              // 勾选 → 右轴分配
     void onRulerToggled(bool checked);
+    void onPngClicked();                                           // 切片 41：FR-EXP-02
 
 private:
     void addListRow(uint32_t pointId, const QString& name);
