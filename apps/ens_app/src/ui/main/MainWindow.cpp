@@ -120,7 +120,8 @@ void MainWindow::setupViews() {
         p->deleteLater();
     }
 
-    m_overview  = new OverviewWidget(m_deps.bus, this);
+    // 切片 40：OverviewWidget 注入点表（SOC 仪表盘 / 簇温度热力条数据源；null 容忍）
+    m_overview  = new OverviewWidget(m_deps.bus, m_deps.pointTable, this);
     // 切片 36：告警中心完整版（历史筛选/确认/导出；currentUser 供确认人记录，auth 空则禁用）
     // 切片 38：±30s 回放按钮（L1 快照读取注入，FR-AL-12）
     m_alarmView = new AlarmCenterWidget(
