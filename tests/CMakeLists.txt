@@ -50,6 +50,7 @@ add_executable(ens_tests
     unit/test_alarm_query.cpp
     unit/test_alarm_notifier.cpp
     unit/test_replay.cpp
+    unit/test_realtime_interact.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
