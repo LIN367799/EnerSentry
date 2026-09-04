@@ -15,7 +15,18 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File tools/run_phase4_acceptance.ps1
 #   Optional: -Scenario xxx.json -RunSeconds N -OutDir <ascii-path>
-# NOTE: All paths MUST be ASCII-only (Start-Process arg encoding corruption on CJK).
+# NOTE 1: All paths MUST be ASCII-only (Start-Process arg encoding corruption on CJK).
+# NOTE 2: -RunSeconds MUST exceed the scenario's last step time, otherwise the
+#         scenario is aborted and sim_report.json reports INCONCLUSIVE.
+#         Reference durations (last step t + margin):
+#           overheat_fast.json       -> 12s  (default, RECOVER @5s)
+#           voltage_fault_drill.json -> 50s  (RECOVER @40s)
+#           overheat_drill.json      -> 80s  (RECOVER @70s)
+#         random_linkloss_stress.json is a long-run scenario: use run_soak_test.ps1.
+#
+# ENCODING CONTRACT: THIS FILE MUST STAY PURE ASCII (no BOM, LF endings).
+# PowerShell 5.1 decodes a BOM-less .ps1 as ANSI/GBK; any CJK byte sequence is
+# then mis-decoded and the parser dies with "UnexpectedToken '}'" (verified 2026-09-04).
 
 param(
     [string]$Scenario = "overheat_fast.json",
@@ -24,6 +35,25 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Process wait helper. Wait-Process throws "process has exited, cannot process
+# request" when the target already exited, and -ErrorAction SilentlyContinue does
+# NOT reliably suppress it; combined with $ErrorActionPreference='Stop' this aborted
+# the whole acceptance run (observed on the voltage_fault_drill 50s round).
+# Polling HasExited is idempotent and immune to the already-exited race.
+function Wait-Proc {
+    param([System.Diagnostics.Process]$Proc, [int]$TimeoutSec, [string]$Label)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while (-not $Proc.HasExited) {
+        if ($sw.Elapsed.TotalSeconds -ge $TimeoutSec) {
+            Write-Host "  [!] timeout ${TimeoutSec}s waiting for $Label (pid $($Proc.Id)) - killing"
+            Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    return $true
+}
 $root = "D:\Study\Qt_host_application_Project\EnerSentry"
 $bin  = Join-Path $root "bin\Debug"
 $td   = Join-Path $root "build\vs2022-debug\test_data"
@@ -51,6 +81,21 @@ Write-Host "== Phase 4 acceptance =="
 Write-Host "  sim: DeviceSimulator --cli ${simSec}s scenario=$Scenario port=$port"
 Write-Host "  app: ens_app --cli ${appSec}s port=$port"
 
+# Scenario duration guard: if RunSeconds is shorter than the scenario's last step,
+# the scenario is aborted and sim_report.json reports INCONCLUSIVE (not a bug).
+try {
+    # Read as explicit UTF-8: Get-Content would decode the BOM-less UTF-8 scenario
+    # JSON as ANSI/GBK and ConvertFrom-Json would then fail on its CJK description.
+    $scenJson = [System.IO.File]::ReadAllText($scen, [System.Text.Encoding]::UTF8)
+    $scenObj = $scenJson | ConvertFrom-Json
+    $maxT = ($scenObj.steps | Measure-Object -Property t -Maximum).Maximum
+    $needSec = [math]::Ceiling($maxT / 1000.0) + 5
+    if ($RunSeconds -lt $needSec) {
+        Write-Host "  [!] WARN: -RunSeconds $RunSeconds < scenario needs ~${needSec}s (last step t=${maxT}ms)"
+        Write-Host "      expect sim_report result=INCONCLUSIVE; re-run with -RunSeconds $needSec"
+    }
+} catch { Write-Host "  [?] scenario duration precheck skipped ($_)" }
+
 $sim = Start-Process -FilePath (Join-Path $bin "DeviceSimulator.exe") -ArgumentList @(
     "--cli", "$simSec", "--port", "$port", "--pointtable", $pt,
     "--scenario", $scen, "--export-dir", $simOut) -PassThru -NoNewWindow `
@@ -64,8 +109,8 @@ $app = Start-Process -FilePath (Join-Path $bin "ens_app.exe") -ArgumentList @(
     "--data-dir", $dbOut, "--blackbox-dir", $bbOut) -PassThru -NoNewWindow `
     -RedirectStandardOutput (Join-Path $OutDir "app_stdout.txt")
 
-Wait-Process -Id $sim.Id -Timeout 60 -ErrorAction SilentlyContinue
-Wait-Process -Id $app.Id -Timeout 60 -ErrorAction SilentlyContinue
+Wait-Proc $sim ($simSec + 30) "simulator" | Out-Null
+Wait-Proc $app ($appSec + 30) "ens_app"    | Out-Null
 
 # ---- Assertions ----
 $fail = @()

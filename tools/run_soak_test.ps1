@@ -26,6 +26,26 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Process wait helper (same rationale as tools/run_phase4_acceptance.ps1):
+# Wait-Process throws when the target already exited and -ErrorAction cannot
+# reliably suppress it -> would abort the soak run under $ErrorActionPreference='Stop'.
+# ENCODING CONTRACT: THIS FILE MUST STAY PURE ASCII (no BOM, LF endings), because
+# PowerShell 5.1 decodes BOM-less .ps1 as ANSI/GBK and CJK bytes break the parser.
+function Wait-Proc {
+    param([System.Diagnostics.Process]$Proc, [int]$TimeoutSec, [string]$Label)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while (-not $Proc.HasExited) {
+        if ($sw.Elapsed.TotalSeconds -ge $TimeoutSec) {
+            Write-Host "  [!] timeout ${TimeoutSec}s waiting for $Label (pid $($Proc.Id)) - killing"
+            Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    return $true
+}
+
 $root = "D:\Study\Qt_host_application_Project\EnerSentry"
 $bin  = Join-Path $root "bin\Debug"
 $td   = Join-Path $root "build\vs2022-debug\test_data"
@@ -91,8 +111,18 @@ while ($true) {
     $appCpuPct = if ($SampleSec -gt 0) { [math]::Round(($cpuNow - $prevCpu) / $SampleSec * 100.0, 1) } else { 0 }
     $prevCpu = $cpuNow
     $appHandles = $appRef.HandleCount
+    # NOTE: the redirect file is created immediately but stays EMPTY for most of the
+    # run - a child's stdout is a FILE handle (not a console), so stdio is FULLY
+    # buffered and only flushes on exit or every 4KB. Get-Content -Raw on a 0-byte
+    # file returns $null, and [regex]::Matches($null, ...) throws ArgumentNullException
+    # which killed the whole soak under $ErrorActionPreference='Stop' (verified 2026-09-04).
+    # sampleLines is therefore informational only; use dbSizeKB growth as the live
+    # ingest metric (see analysis below).
     $sampleLines = 0
-    if (Test-Path $appLog) { $sampleLines = ([regex]::Matches((Get-Content $appLog -Raw), "\[ENS\] pt=")).Count }
+    if (Test-Path $appLog) {
+        $appTxt = Get-Content $appLog -Raw -ErrorAction SilentlyContinue
+        if ($appTxt) { $sampleLines = ([regex]::Matches($appTxt, "\[ENS\] pt=")).Count }
+    }
     $dbSizeKB = 0
     $dbFile = Get-ChildItem $dbOut -Recurse -Filter "data_*.db" -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($dbFile) { $dbSizeKB = [math]::Round($dbFile.Length / 1KB) }
@@ -103,8 +133,8 @@ while ($true) {
 }
 
 # ---- wait both to finish ----
-Wait-Process -Id $sim.Id -Timeout ($simSec + 60) -ErrorAction SilentlyContinue
-Wait-Process -Id $app.Id -Timeout 30 -ErrorAction SilentlyContinue
+Wait-Proc $sim ($simSec + 60) "simulator" | Out-Null
+Wait-Proc $app 60 "ens_app"                | Out-Null
 
 # ---- analysis ----
 $fail = @()
@@ -115,19 +145,29 @@ if (Test-Path $csv) {
     $rows = Import-Csv $csv
     if ($rows.Count -ge 6) {
         $n = $rows.Count
-        $firstN = [math]::Max(1, [int]($n * 0.10))
-        $lastN  = [math]::Max(1, [int]($n * 0.10))
-        $avgFirstMem = ($rows | Select-Object -First $firstN | Measure-Object -Property appMemKB -Average).Average
-        $avgLastMem  = ($rows | Select-Object -Last $lastN  | Measure-Object -Property appMemKB -Average).Average
+        # Window = 20% of rows but at least 2: with 10% of 11 rows the window is a
+        # single row, and since row 1 legitimately has sampleLines=0 (stdio buffer not
+        # yet flushed) the computed firstRate was 0 -> "lastRate < 0 * 0.6" could NEVER
+        # be true, i.e. the decay assertion was unfailable (verified 2026-09-04).
+        $win = [math]::Max(2, [int]($n * 0.20))
+        $avgFirstMem = ($rows | Select-Object -First $win | Measure-Object -Property appMemKB -Average).Average
+        $avgLastMem  = ($rows | Select-Object -Last $win  | Measure-Object -Property appMemKB -Average).Average
         $memGrowthMB = [math]::Round(($avgLastMem - $avgFirstMem) / 1024.0, 1)
-        Write-Host "  mem growth (last10% - first10%): ${memGrowthMB} MB"
+        Write-Host "  mem growth (last$win rows - first$win rows): ${memGrowthMB} MB"
         if ($memGrowthMB -gt 20) { $fail += "memory growth ${memGrowthMB}MB > 20MB (possible leak)" }
 
         $sampleCol = @($rows | ForEach-Object { [int64]$_.sampleLines })
-        $firstRate = if ($sampleCol[$firstN - 1] - $sampleCol[0] -gt 0) { $sampleCol[$firstN - 1] - $sampleCol[0] } else { 0 }
-        $lastRate  = if ($sampleCol[$n - 1] - $sampleCol[$n - $lastN - 1] -gt 0) { $sampleCol[$n - 1] - $sampleCol[$n - $lastN - 1] } else { 0 }
-        Write-Host "  sample rate first10%: $firstRate  last10%: $lastRate"
-        if ($lastRate -lt ($firstRate * 0.60)) { $fail += "sample rate decayed (last $lastRate < 60% of first $firstRate)" }
+        $totalSamples = $sampleCol[$n - 1]
+        $firstRate = $sampleCol[$win - 1]      - $sampleCol[0]
+        $lastRate  = $sampleCol[$n - 1]        - $sampleCol[$n - $win - 1]
+        Write-Host "  sampleLines total=$totalSamples  first$win rows:+$firstRate  last$win rows:+$lastRate"
+        if ($totalSamples -le 0) {
+            $fail += "no samples ingested at all (sampleLines stayed 0) - check app/point table/link"
+        } elseif ($firstRate -le 0) {
+            $fail += "no ingestion in the first window (+$firstRate) - app did not start collecting"
+        } elseif ($lastRate -lt ($firstRate * 0.60)) {
+            $fail += "sample rate decayed (last +$lastRate < 60% of first +$firstRate)"
+        }
     } else {
         $fail += "insufficient samples in CSV ($($rows.Count))"
     }
