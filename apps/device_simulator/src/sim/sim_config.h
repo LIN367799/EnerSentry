@@ -4,7 +4,7 @@
 // 职责：
 //   - 装载运行时配置(TCP/RTU 端点、tickMs、seed、Slaves 拓扑、pointtablePath)
 //   - 提供给 SimulatorEngine 作为构造参数(尚未接入 Engine 时由 PointGenerator 单测消费)
-//   - JSON schema 与 SIM-IMP §5.1 同(`config/pointtable.json` 兼容)
+//   - JSON schema 与 SIM-IMP §5.1 同(`data/sim_pointtable_sample.json` 兼容;切片 44a 前默认 `config/pointtable.json`)
 
 #pragma once
 
@@ -52,7 +52,7 @@ struct SimConfig {
     uint32_t               tickMs       = 100;       // SIM-IMP §4.4
     uint32_t               seed         = 0;         // NFR-TEST-01 确定性
     std::vector<SlaveSpec> slaves;
-    std::string            pointtablePath = "config/pointtable.json";
+    std::string            pointtablePath = "data/sim_pointtable_sample.json";
     std::string            scenarioPath;            // 切片 15 B9：非空则 start 后自动加载并运行
     std::string            exportDir;               // 切片 15 B9：sim_events.jsonl/sim_report.json 落盘目录
 

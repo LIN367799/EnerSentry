@@ -74,7 +74,8 @@ int main(int argc, char* argv[]) {
     int tcpPort = 0;   // CLI:0 = OS 分配；GUI:0 将落到 SimConfig 默认 5020
     std::string scenarioPath;
     std::string exportDir;
-    std::string pointtablePath = "docs/04-测试台/data/sim_pointtable_sample.json";
+    // 切片 44a：数据工件迁至仓根 data/（原 docs/04-测试台/data/），默认路径全 ASCII
+    std::string pointtablePath = "data/sim_pointtable_sample.json";
 
     const int rc = parseCli(argc, argv, &cliMode, &scenarioPath, &exportDir,
                             &pointtablePath, &tcpPort, &runSec);

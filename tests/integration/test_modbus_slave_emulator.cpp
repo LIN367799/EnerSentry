@@ -55,7 +55,7 @@ std::filesystem::path resolveSampleJsonPath() {
     static const std::filesystem::path candidates[] = {
         std::filesystem::path{L"test_data/sim_pointtable_sample.json"},
         std::filesystem::path{L"../test_data/sim_pointtable_sample.json"},
-        std::filesystem::path{L"../../docs/04-测试台/data/sim_pointtable_sample.json"},
+        std::filesystem::path{L"../../data/sim_pointtable_sample.json"},
     };
     for (const auto& p : candidates) {
         std::error_code ec;

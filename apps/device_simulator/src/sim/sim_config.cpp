@@ -48,7 +48,7 @@ SimConfig SimConfig::loadFromJsonFile(const std::filesystem::path& path) {
     }
     cfg.tickMs         = root.value("tickMs", 100u);
     cfg.seed           = root.value("seed",   0u);
-    cfg.pointtablePath = root.value("pointtablePath", std::string{"config/pointtable.json"});
+    cfg.pointtablePath = root.value("pointtablePath", std::string{"data/sim_pointtable_sample.json"});
     if (root.contains("slaves")) {
         for (const auto& js : root["slaves"]) {
             SlaveSpec s;

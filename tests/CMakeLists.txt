@@ -106,22 +106,21 @@ endif()
 #   1) CMake target_compile_definitions 注入含中文路径 → MSVC 字符串字面量截断
 #   2) std::filesystem::path::string()/wstring() → system_error "No mapping for Unicode..."
 #
-# 用 file(COPY ...) 在 configure 期执行(非 POST_BUILD 命令),避免 cmd.exe 把含"测试台"
-# 的源路径按 GBK 编码后识别为 `"` 终结符,导致 CatchAddTests.cmake 解析 ens_tests-b12d07c
-# _tests.cmake 失败。file(COPY) 走 CMake 内部 API,路径 UTF-16 直传,完全绕开 shell 编码层。
+# 切片 44a：数据工件源迁至仓根 data/（原 docs/04-测试台/data|scenarios，全 ASCII），
+# file(COPY) 源路径不再含中文，注释中历史编码坑（GBK `"` 终结符等）自动消失。
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data)
-file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/sim_pointtable_sample.json"
+file(COPY "${CMAKE_SOURCE_DIR}/data/sim_pointtable_sample.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data)
 # 切片 15 B9：drill 场景脚本复制到 test_data/scenarios/（test_scenario_script.cpp 用相对路径加载）
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/test_data/scenarios)
 file(COPY
-     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/overheat_drill.json"
-     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/overheat_fast.json"
-     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/random_linkloss_stress.json"
-     "${CMAKE_SOURCE_DIR}/docs/04-测试台/scenarios/voltage_fault_drill.json"
+     "${CMAKE_SOURCE_DIR}/data/scenarios/overheat_drill.json"
+     "${CMAKE_SOURCE_DIR}/data/scenarios/overheat_fast.json"
+     "${CMAKE_SOURCE_DIR}/data/scenarios/random_linkloss_stress.json"
+     "${CMAKE_SOURCE_DIR}/data/scenarios/voltage_fault_drill.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data/scenarios)
 # 切片 16：告警规则 sample 复制到 test_data/（test_alarm_rule_loader / test_main_loop 用）
-file(COPY "${CMAKE_SOURCE_DIR}/docs/04-测试台/data/alarm_rules_sample.json"
+file(COPY "${CMAKE_SOURCE_DIR}/data/alarm_rules_sample.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data)
 
 # Qt SQL driver:Debug 模式需要 qsqlited.dll 在 plugins/sqldrivers/ 子目录

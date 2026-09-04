@@ -5,7 +5,7 @@
 > - **Track B — `apps/device_simulator`**：测试台（设备模拟与故障注入，对端）。
 >
 > 本文把两轨的**完整分步开发计划**写在一起，逐 Phase 配对、互相对接联调。**每个子工程都有自己的步骤清单、骨架代码、测试方法、参考文档**——不是谁附属谁。
-> 设计依据：全套 `ENS-HLD-*` / `ENS-LLD-*` / `ENS-(HLD|LLD|SIM)-SIM`、`ENS-BP-000`、`ENS-SRS-000`，以及 `04-测试台/` 的数据工件（`sim_pointtable_*.json`、`overheat_drill.json`、`ptgen.py`）。
+> 设计依据：全套 `ENS-HLD-*` / `ENS-LLD-*` / `ENS-(HLD|LLD|SIM)-SIM`、`ENS-BP-000`、`ENS-SRS-000`，以及仓根 `data/` 的数据工件（`sim_pointtable_*.json`、`data/scenarios/*.json`，切片 44a 起收口）与 `04-测试台/tools/ptgen.py`。
 > 约定：主程序 L1 通信接入 / L2 协议引擎 / **L3 数据中枢（RingBuffer+DataBus+持久化+黑匣子）** / **L4 业务逻辑（状态机+告警+SBO）** / L5 UI。测试台无 L 编号，逻辑上位于主程序 L1 的「对侧」（被轮询的设备侧）。
 
 ---
@@ -24,7 +24,7 @@
 | **Track B** 测试台详细设计（类/接口/状态机） | ENS-LLD-SIM | `04-测试台/ENS-LLD-SIM 设备模拟与故障注入模块详细设计说明书.md` |
 | **Track B** 测试台实现规格补充（工件/CMake/常数/日志） | ENS-SIM-IMP | `04-测试台/ENS-SIM-IMP 设备模拟与故障注入程序实现规格补充.md` |
 | 需求 / 蓝图（为什么做） | ENS-SRS-000 + ENS-BP-000 | `01-蓝图与需求/ENS-SRS-000 软件需求规格说明书（SRS）.md`、`01-蓝图与需求/ENS-BP-000 工业上位机实战项目蓝图.md` |
-| 点表 / 场景 / 点表生成 | 测试台数据工件 | `04-测试台/data/sim_pointtable_sample.json`、`04-测试台/data/sim_pointtable_full.json`、`04-测试台/scenarios/overheat_drill.json`、`04-测试台/tools/ptgen.py` |
+| 点表 / 场景 / 点表生成 | 测试台数据工件 | `data/sim_pointtable_sample.json`、`data/sim_pointtable_full.json`、`data/scenarios/overheat_drill.json`、`04-测试台/tools/ptgen.py` |
 | **编码前**（工具链/依赖来源/CMake 骨架/BUILD-0 冒烟） | **ENS-DEV-BOOT 项目启动构建骨架与上手顺序** | `05-开发指南/ENS-DEV-BOOT 项目启动构建骨架与上手顺序.md` |
 | 工程目录 / 文件落点 / Target 命名 | ENS-DEV-ARCH 工程目录架构 | `05-开发指南/ENS-DEV-ARCH 工程目录架构.md` |
 
@@ -647,7 +647,7 @@ private slots:
 ### 5B. Track B 测试台（device_simulator）步骤
 
 - [ ] **B9 `ScenarioScript` 场景驱动 + JSON 日志导出**
-  - `src/sim/scenario_script.*`：解析 `scenarios/*.json`（`steps:[{t, action, fault, scope, slave, targetValue, rampRate, durationMs}]`，ENS-SIM-IMP §7），按 `t` 时间戳排程驱动 `FaultInjector`；`playLoop` 产出机器可读日志（§8）。
+  - `src/sim/scenario_script.*`：解析 `data/scenarios/*.json`（`steps:[{t, action, fault, scope, slave, targetValue, rampRate, durationMs}]`，ENS-SIM-IMP §7），按 `t` 时间戳排程驱动 `FaultInjector`；`playLoop` 产出机器可读日志（§8）。
   - 产出 `sim_events.jsonl`（每行一个事件）+ `sim_report.json`（场景结束，`result ∈ {PASS,FAIL,INCONCLUSIVE}`，CI 可解析，NFR-TEST-02）。
   - 🔍 测试（Tier 2 + Tier 3）：T2 单测 `overheat_drill.json` 按 `t` 精确触发最终恢复；T3 跑 `overheat_drill.json`→约 60s `Rack-01_MaxTemp>60℃` 且 `alarmWord.bit0=1`，70s 恢复，`sim_report.json` 的 `result=PASS`；`--seed` 两次运行序列可复现（NFR-TEST-01）。
   - 📚 参考：`ENS-SIM-IMP` §7 场景 / §8 日志 / `ENS-LLD-SIM` §7.4。↔ 对接 Track A **5.1.2/5.1.5**（降采样保尖峰、回放联调）。
@@ -713,9 +713,9 @@ private:
 | 资源 | 路径 | 用途 | 📚 参考 |
 | --- | --- | --- | --- |
 | 设备模拟器工程 | `04-测试台/`（→ `apps/device_simulator`） | TCP 5020 + RTU 虚拟串口双链路，模拟 23 从站 | `ENS-HLD-SIM` |
-| 联调点表 | `04-测试台/data/sim_pointtable_sample.json` | 常规联调（43 点，地址已权威化） | `ENS-SIM-IMP` §3 |
-| 压测点表 | `04-测试台/data/sim_pointtable_full.json` | 高频压力（~20,667 点） | `ENS-SIM-IMP` §8 |
-| 演练场景 | `04-测试台/scenarios/overheat_drill.json` | 告警演练 / 场景回放 | `ENS-LLD-SIM` §5 |
+| 联调点表 | `data/sim_pointtable_sample.json` | 常规联调（43 点，地址已权威化） | `ENS-SIM-IMP` §3 |
+| 压测点表 | `data/sim_pointtable_full.json` | 高频压力（~20,667 点） | `ENS-SIM-IMP` §8 |
+| 演练场景 | `data/scenarios/overheat_drill.json` | 告警演练 / 场景回放 | `ENS-LLD-SIM` §5 |
 | 点表生成 | `04-测试台/tools/ptgen.py` | 自定义点表规模 | `ENS-SIM-IMP` §3 |
 
 > 主程序与测试台经**同一份 `sim_pointtable_sample.json`** 与标准 `IChannel`/`ISlaveTransport` 零改动对接（FR-SIM-09 / NFR-TEST-03）。

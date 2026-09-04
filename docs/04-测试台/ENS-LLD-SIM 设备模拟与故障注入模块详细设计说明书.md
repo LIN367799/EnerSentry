@@ -881,10 +881,10 @@ HLD-SIM §11 定义的 ADR-SIM-01~05 均为"细化/落地"决策，不推翻 HLD
 
 本册给出"设计"，开发人员落地还需**具体工件规格**（公共库契约、点表数据、物理常数、CMake、场景脚本、日志 schema、线程库决策、验收清单、GUI 控制台）。这些内容统一收录于配套文档 **`ENS-SIM-IMP`《设备模拟与故障注入程序 实现规格补充》**（同目录 `04-测试台/`），请勿在本册重复实现细节。该册附录 A 提供点表全量生成脚本 `ptgen.py`，仓库内另提交可直接加载的：
 
-- `data/sim_pointtable_sample.json` —— 代表性点表样例（Rack-01 全簇级 + 8 单体、PCS-01、电表/液冷/消防）。
-- `scenarios/overheat_drill.json` —— 整站过温演练。
-- `scenarios/random_linkloss_stress.json` —— 随机断链压测。
-- `scenarios/voltage_fault_drill.json` —— 电压越限演练。
+- `data/sim_pointtable_sample.json` —— 代表性点表样例（Rack-01 全簇级 + 8 单体、PCS-01、电表/液冷/消防）。（切片 44a 起数据工件收口仓根 `data/`，原 `docs/04-测试台/data|scenarios/` 迁移而来。）
+- `data/scenarios/overheat_drill.json` —— 整站过温演练。
+- `data/scenarios/random_linkloss_stress.json` —— 随机断链压测。
+- `data/scenarios/voltage_fault_drill.json` —— 电压越限演练。
 - `ENS-SIM-IMP` §10（UI 控制台设计）+ HLD-SIM §2.5 / §6.1 —— 图形启动器 `DeviceSimulator`（Qt 5.15 Widgets）的模块、主窗口布局、30Hz 刷新模型（FR-SIM-10）；引擎 `src/sim/` 仍为零 Qt 依赖，GUI 仅作薄前端消费 RCU 快照。
 - 命名说明：本册代码中 `namespace ens::sim` 为 `device_simulator/src/sim` 的**内部 C++ 命名空间**（非独立库 Target）；代码组织见 ENS-SIM-IMP §1。测试台**无命令行 / headless 入口、无进程内 Simulation 模式**——与 HLD-SIM V1.3 / ENS-SIM-IMP 一致。
 

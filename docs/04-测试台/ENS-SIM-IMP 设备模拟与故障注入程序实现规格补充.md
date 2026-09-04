@@ -57,13 +57,15 @@ EnerSentry/                              # 单仓库（git）
 │       │   │   ├── scenario_runner.*
 │       │   │   └── log_view.*
 │       │   └── main_gui.cpp              # GUI 入口（QApplication）
-│       ├── tools/ptgen.py               # 点表全量生成器（§3 附录 A）
-│       ├── scenarios/                   # 场景脚本样例（§7）
-│       │   ├── overheat_drill.json
-│       │   ├── random_linkloss_stress.json
-│       │   └── voltage_fault_drill.json
-│       └── data/
-│           └── sim_pointtable_sample.json  # 代表性点表样例（§3）
+│       ├── docs/04-测试台/tools/ptgen.py # 点表全量生成器（§3 附录 A）
+│       └── data/                         # 数据工件仓根（切片 44a 起，全 ASCII）
+│           ├── sim_pointtable_sample.json   # 代表性点表样例（§3）
+│           ├── sim_pointtable_full.json     # 全量点表（~20,667 点）
+│           ├── alarm_rules_sample.json      # 告警规则样例
+│           └── scenarios/                   # 场景脚本样例（§7）
+│               ├── overheat_drill.json
+│               ├── random_linkloss_stress.json
+│               └── voltage_fault_drill.json
 ```
 
 **关键边界**：`device_simulator/src/sim` 与 `src/core` 为**纯 C++17**（原生 socket + `std::thread`），**不依赖 Qt**（无信号槽），便于隔离单测；Qt GUI（`src/gui/`、`main_gui.cpp`）单独链接 QtWidgets，作为薄前端消费 RCU 快照（NFR-TEST-04）。`apps/ens_app` 与 `apps/device_simulator` **互不依赖**——主程序编译时根本不需要测试台源码存在，确保主程序零耦合（NFR-TEST-03）。
@@ -189,9 +191,9 @@ fire   @ 0x4100 (slave 23)             # 消防
 
 ### 3.3 仓库内交付物
 
-- `data/sim_pointtable_sample.json`：**代表性样例**（Rack-01 全簇级寄存器 + 前 8 个单体电压/温度、PCS#1、Meter、LiquidCooling、Fire），开发人员据此推断全量格式。
-- `tools/ptgen.py`：**构建期生成器**（附录 A），CI 或本地 `python tools/ptgen.py > build/sim_pointtable.full.json` 产出全量文件。
-- `SimConfig.pointtablePath` 默认指向 `build/sim_pointtable.full.json`；开发期可用 `sample.json` 快速验证。
+- 仓根 `data/sim_pointtable_sample.json`：**代表性样例**（Rack-01 全簇级寄存器 + 前 8 个单体电压/温度、PCS#1、Meter、LiquidCooling、Fire），开发人员据此推断全量格式。（切片 44a 起数据工件收口仓根 `data/`，原 `docs/04-测试台/data|scenarios/` 迁移而来。）
+- `docs/04-测试台/tools/ptgen.py`：**构建期生成器**（附录 A），`python ptgen.py --sample|--full` 默认输出仓根 `data/`。
+- `SimConfig.pointtablePath` 默认指向 `data/sim_pointtable_sample.json`；GUI/CLI 均可 `--pointtable` 覆盖。
 
 ---
 
@@ -313,7 +315,7 @@ target_compile_features(DeviceSimulator PRIVATE cxx_std_17)
 ## 7. 场景脚本样例 — 缺口#5
 
 格式与 HLD-SIM §7 一致：`steps:[{t, action, fault, scope, slave, targetValue, rampRate, durationMs}]`。
-仓库内 `scenarios/` 提交以下三个**可直接加载**的脚本（完整内容见对应文件）：
+仓库内 `data/scenarios/` 提交以下三个**可直接加载**的脚本（完整内容见对应文件）：
 
 1. **`overheat_drill.json`**（整站过温演练）：t=0 起将全部 16 簇 `maxTemp` 在 60s 内由 35℃ 斜坡拉至 65℃（越限），同时置 `alarmWord.bit0(OverTemp)=1`；t=70s 恢复。验证告警引擎 FR-AL 与温度越限链路。
 2. **`random_linkloss_stress.json`**（随机断链压测）：在 300s 窗口内随机对 1~4 个 PCS 从站触发 FR-SIM-05c 断链 5~15s 后恢复，重复多次。验证重连 COMM-09、熔断 ADR-13、SBO 断线清除 FR-CTRL-07。

@@ -39,8 +39,8 @@ using namespace ens::protocol;
 
 namespace {
 
-// 用 __FILE__ 在运行期回溯到 tests/unit/，再上溯两级到仓库根，
-// 然后拼出 docs/04-测试台/data/sim_pointtable_sample.json 的绝对路径。
+// 数据工件源在仓根 data/（切片 44a 起，原 docs/04-测试台/data/）；运行期候选路径
+// 一律走 CMake file(COPY) 部署产物 test_data/（见下），不直接引用仓库源目录。
 //
 // ⚠ 不要用 CMake target_compile_definitions 注入 ENS_PROJECT_SOURCE_ROOT:
 //   MSVC 编译期字符串处理在遇到 GBK 编码的"测试台"时会截断路径

@@ -2,7 +2,7 @@
 // 测试台 ── 场景脚本驱动（DevGuide §4B B9 切片 15 / ENS-SIM-IMP §7/§8 / ENS-LLD-SIM §2.2.6）。
 //
 // 职责：
-//   - 解析 `scenarios/*.json`（steps:[{t, action, fault, scope, slave, register, count,
+//   - 解析 `data/scenarios/*.json`（steps:[{t, action, fault, scope, slave, register, count,
 //     targetValue, rampRate, durationMs, alarmBit}]，schema 见 SIM-IMP §7）
 //   - 按 t（相对场景开始毫秒）排程驱动 FaultInjector：INJECT 触发 / RECOVER 显式恢复；
 //     durationMs>0 由 FaultSession 自然到期自动 RECOVERING（随机断链压测依赖）

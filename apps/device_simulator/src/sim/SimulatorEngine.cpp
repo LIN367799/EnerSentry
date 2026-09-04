@@ -48,8 +48,9 @@ bool SimulatorEngine::start(const SimConfig& cfgIn) noexcept {
     m_fi = std::make_unique<FaultInjector>();
 
     // 3) 加载点表（缺省路径由 SimConfig.pointtablePath 提供）
-    //    切片 43 修复：cfgIn.pointtablePath 是 UTF-8 窄字符串（main_gui 默认含中文目录
-    //    "docs/04-测试台/…"）。直接隐式构造 std::filesystem::path(std::string) 在 MSVC 上
+    //    切片 43 修复：cfgIn.pointtablePath 是 UTF-8 窄字符串（历史默认含中文目录
+    //    "docs/04-测试台/…"；切片 44a 起默认 data/sim_pointtable_sample.json 全 ASCII）。
+    //    直接隐式构造 std::filesystem::path(std::string) 在 MSVC 上
     //    按 ACP(GBK) codecvt 解码 UTF-8 字节 → 抛 ERROR_NO_UNICODE_TRANSLATION
     //    ("No mapping for the Unicode character…")。用 u8path 显式按 UTF-8 转宽路径绕开 ACP；
     //    对 ASCII 路径行为与原 path() 完全一致（tests 325 例无回归面）。
