@@ -82,6 +82,11 @@ public:
     /// 诊断:cfg 传入的 tickMs（供 CLI 模式 sleep_for 使用）
     uint32_t tickMs() const noexcept { return m_tickMs; }
 
+    /// 最近一次 start()/loadScenario() 失败的诊断原因（切片 43：透出真实根因，
+    /// 替代 GUI 端笼统的「点表路径或端口冲突」文案）。start/loadScenario 与 GUI
+    /// 调用同线程（Qt queued 投递），无需额外加锁。
+    const std::string& lastError() const noexcept { return m_lastError; }
+
     /// 诊断（切片 17）：暴露 RCU 寄存器库（测试/复现用；DevGuide §4B 骨架定义）
     RegisterBank* bank() noexcept { return m_bank.get(); }
 
@@ -116,6 +121,7 @@ private:
     // 诊断 + 配置缓存
     std::atomic<uint64_t> m_tickCount{0};
     uint32_t              m_tickMs = 100;
+    std::string           m_lastError;   // 切片 43：start/loadScenario 失败原因（见 lastError()）
 };
 
 }  // namespace ens::sim

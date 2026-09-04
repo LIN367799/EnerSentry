@@ -3,55 +3,61 @@
   <!-- 用法：代码中引用 :/icons/view_overview.svg；QIcon 经 QSS 主题 currentColor 着色 -->
   <!-- 语义命名：view_*=七视图切换 / menu_*=菜单 / alarm_*=告警中心 / plot_*=实时曲线 -->
   <!--          hist_*=历史趋势 / config_*=参数配置 / sbo_*=SBO 控制 / sim_*=测试台 B10 -->
+  <!--
+    2026-09-03 切片 43 修复：file 路径在磁盘上带 icons/ 目录，必须用 alias 把注册
+    URL 压平为 :/<prefix>/<basename>。此前漏写 alias 导致 rcc 注册成
+    :/icons/icons/xxx.svg（双层目录），QIcon(":/icons/xxx.svg") 查不到 → qt.svg 报
+    "Cannot open file"。qss 块同样加 alias。
+  -->
   <qresource prefix="/icons">
     <!-- 七视图切换（TopToolBar） -->
-    <file>icons/view_overview.svg</file>
-    <file>icons/view_trend.svg</file>
-    <file>icons/view_alarm.svg</file>
-    <file>icons/view_history.svg</file>
-    <file>icons/view_config.svg</file>
-    <file>icons/view_diag.svg</file>
-    <file>icons/view_sbo.svg</file>
+    <file alias="view_overview.svg">icons/view_overview.svg</file>
+    <file alias="view_trend.svg">icons/view_trend.svg</file>
+    <file alias="view_alarm.svg">icons/view_alarm.svg</file>
+    <file alias="view_history.svg">icons/view_history.svg</file>
+    <file alias="view_config.svg">icons/view_config.svg</file>
+    <file alias="view_diag.svg">icons/view_diag.svg</file>
+    <file alias="view_sbo.svg">icons/view_sbo.svg</file>
     <!-- 菜单栏 / 通用 -->
-    <file>icons/menu_open.svg</file>
-    <file>icons/export.svg</file>
-    <file>icons/menu_quit.svg</file>
-    <file>icons/menu_help.svg</file>
-    <file>icons/menu_about.svg</file>
-    <file>icons/lock.svg</file>
-    <file>icons/unlock.svg</file>
-    <file>icons/refresh.svg</file>
+    <file alias="menu_open.svg">icons/menu_open.svg</file>
+    <file alias="export.svg">icons/export.svg</file>
+    <file alias="menu_quit.svg">icons/menu_quit.svg</file>
+    <file alias="menu_help.svg">icons/menu_help.svg</file>
+    <file alias="menu_about.svg">icons/menu_about.svg</file>
+    <file alias="lock.svg">icons/lock.svg</file>
+    <file alias="unlock.svg">icons/unlock.svg</file>
+    <file alias="refresh.svg">icons/refresh.svg</file>
     <!-- 告警中心 -->
-    <file>icons/alarm_ack.svg</file>
-    <file>icons/alarm_ack_all.svg</file>
-    <file>icons/alarm_filter.svg</file>
+    <file alias="alarm_ack.svg">icons/alarm_ack.svg</file>
+    <file alias="alarm_ack_all.svg">icons/alarm_ack_all.svg</file>
+    <file alias="alarm_filter.svg">icons/alarm_filter.svg</file>
     <!-- 实时曲线 / 历史趋势 -->
-    <file>icons/plot_pause.svg</file>
-    <file>icons/plot_play.svg</file>
-    <file>icons/plot_clear.svg</file>
-    <file>icons/plot_cursor.svg</file>
-    <file>icons/plot_snapshot.svg</file>
-    <file>icons/hist_range.svg</file>
-    <file>icons/zoom_in.svg</file>
-    <file>icons/zoom_out.svg</file>
+    <file alias="plot_pause.svg">icons/plot_pause.svg</file>
+    <file alias="plot_play.svg">icons/plot_play.svg</file>
+    <file alias="plot_clear.svg">icons/plot_clear.svg</file>
+    <file alias="plot_cursor.svg">icons/plot_cursor.svg</file>
+    <file alias="plot_snapshot.svg">icons/plot_snapshot.svg</file>
+    <file alias="hist_range.svg">icons/hist_range.svg</file>
+    <file alias="zoom_in.svg">icons/zoom_in.svg</file>
+    <file alias="zoom_out.svg">icons/zoom_out.svg</file>
     <!-- 参数配置 -->
-    <file>icons/config_save.svg</file>
-    <file>icons/config_reset.svg</file>
-    <file>icons/config_import.svg</file>
+    <file alias="config_save.svg">icons/config_save.svg</file>
+    <file alias="config_reset.svg">icons/config_reset.svg</file>
+    <file alias="config_import.svg">icons/config_import.svg</file>
     <!-- SBO 安全控制 -->
-    <file>icons/sbo_select.svg</file>
-    <file>icons/sbo_execute.svg</file>
-    <file>icons/sbo_estop.svg</file>
+    <file alias="sbo_select.svg">icons/sbo_select.svg</file>
+    <file alias="sbo_execute.svg">icons/sbo_execute.svg</file>
+    <file alias="sbo_estop.svg">icons/sbo_estop.svg</file>
     <!-- 测试台 B10 GUI 控制台 -->
-    <file>icons/sim_start.svg</file>
-    <file>icons/sim_stop.svg</file>
-    <file>icons/sim_reload.svg</file>
-    <file>icons/sim_log.svg</file>
+    <file alias="sim_start.svg">icons/sim_start.svg</file>
+    <file alias="sim_stop.svg">icons/sim_stop.svg</file>
+    <file alias="sim_reload.svg">icons/sim_reload.svg</file>
+    <file alias="sim_log.svg">icons/sim_log.svg</file>
     <!-- 应用标识（自绘，储能主题：电池+闪电） -->
-    <file>icons/app_logo.svg</file>
+    <file alias="app_logo.svg">icons/app_logo.svg</file>
   </qresource>
   <qresource prefix="/qss">
     <!-- 暗色工业主题（SRS UI-01；HLD-UI §1.2.1 / LLD-500 §6.3） -->
-    <file>qss/theme.qss</file>
+    <file alias="theme.qss">qss/theme.qss</file>
   </qresource>
 </RCC>

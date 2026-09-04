@@ -102,8 +102,12 @@ void SimulatorMainWindow::setupIcons() {
 bool SimulatorMainWindow::ensureEngineStarted() {
     if (m_running) return true;
     if (!m_engine->start(m_cfg)) {
+        // 切片 43：透出引擎真实失败原因（lastError），替代笼统兜底文案，便于现场排错
+        const QString reason = QString::fromStdString(m_engine->lastError());
         QMessageBox::critical(this, QStringLiteral("引擎"),
-                              QStringLiteral("SimulatorEngine 启动失败（点表路径或端口冲突）"));
+                              reason.isEmpty()
+                                  ? QStringLiteral("SimulatorEngine 启动失败（点表路径或端口冲突）")
+                                  : QStringLiteral("SimulatorEngine 启动失败：%1").arg(reason));
         return false;
     }
     m_running = true;

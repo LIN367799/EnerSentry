@@ -37,6 +37,7 @@ bool SimulatorEngine::start(const SimConfig& cfgIn) noexcept {
     // （点表路径不存在时），不 try-catch 会穿透 noexcept → std::terminate →
     // debug CRT abort 弹窗挂起进程（切片 15 CLI 实测根因）。
     try {
+    m_lastError.clear();
 
     // 1) 缓存 tickMs（DataTick 线程用）+ 场景/导出路径
     m_tickMs = cfgIn.tickMs;
@@ -47,8 +48,14 @@ bool SimulatorEngine::start(const SimConfig& cfgIn) noexcept {
     m_fi = std::make_unique<FaultInjector>();
 
     // 3) 加载点表（缺省路径由 SimConfig.pointtablePath 提供）
-    m_pt = SimPointTable::loadFromJsonFile(cfgIn.pointtablePath);
+    //    切片 43 修复：cfgIn.pointtablePath 是 UTF-8 窄字符串（main_gui 默认含中文目录
+    //    "docs/04-测试台/…"）。直接隐式构造 std::filesystem::path(std::string) 在 MSVC 上
+    //    按 ACP(GBK) codecvt 解码 UTF-8 字节 → 抛 ERROR_NO_UNICODE_TRANSLATION
+    //    ("No mapping for the Unicode character…")。用 u8path 显式按 UTF-8 转宽路径绕开 ACP；
+    //    对 ASCII 路径行为与原 path() 完全一致（tests 325 例无回归面）。
+    m_pt = SimPointTable::loadFromJsonFile(std::filesystem::u8path(cfgIn.pointtablePath));
     if (m_pt == nullptr) {
+        m_lastError = "failed to load pointtable: " + cfgIn.pointtablePath;
         std::cerr << "[SimulatorEngine] failed to load pointtable: "
                   << cfgIn.pointtablePath << "\n";
         m_fi.reset();
@@ -79,6 +86,7 @@ bool SimulatorEngine::start(const SimConfig& cfgIn) noexcept {
     m_emu = std::make_unique<ModbusSlaveEmulator>();
     m_emu->setFaultInjector(m_fi.get());
     if (!m_emu->start(cfg, m_bank.get())) {
+        m_lastError = "ModbusSlaveEmulator.start failed (TCP port busy?)";
         std::cerr << "[SimulatorEngine] emulator.start failed\n";
         m_emu.reset();
         m_gen.reset();
@@ -107,6 +115,7 @@ bool SimulatorEngine::start(const SimConfig& cfgIn) noexcept {
     return true;
 
     } catch (const std::exception& e) {
+        m_lastError = e.what();
         std::cerr << "[SimulatorEngine] start exception: " << e.what() << "\n";
         m_emu.reset();
         m_gen.reset();
@@ -116,6 +125,7 @@ bool SimulatorEngine::start(const SimConfig& cfgIn) noexcept {
         m_pt.reset();
         return false;
     } catch (...) {
+        m_lastError = "unknown exception";
         std::cerr << "[SimulatorEngine] start unknown exception\n";
         m_emu.reset();
         m_gen.reset();
@@ -222,6 +232,7 @@ bool SimulatorEngine::loadScenario(const std::string& path) noexcept {
     if (path.empty()) return false;
     auto sc = std::make_unique<ScenarioScript>();
     if (!sc->load(path)) {
+        m_lastError = "loadScenario failed: " + path;
         std::cerr << "[SimulatorEngine] loadScenario failed: " << path
                   << " notes=" << sc->reportJson() << "\n";
         return false;
