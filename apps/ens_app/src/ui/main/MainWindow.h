@@ -44,6 +44,10 @@ class IAlarmAccess;
 class IL1SnapshotReader;
 }  // namespace ens::datahub
 
+namespace ens::ui {
+class WindowChrome;   // 切片 45：Frameless 接管
+}
+
 namespace Ui {
 class MainWindow;
 }
@@ -112,6 +116,7 @@ public slots:
 
 protected:
     void closeEvent(QCloseEvent* e) override;
+    void changeEvent(QEvent* e) override;   // 切片 45：监听 WindowStateChange 同步 TitleBar 最大化图标
     bool eventFilter(QObject* obj, QEvent* e) override;   // 切片 26：全局活动检测（FR-AUTH-05）
 
 private slots:
@@ -154,6 +159,9 @@ private:
     // 切片 37：严重告警声光（AlarmNotifier 决策 → 弹窗/蜂鸣/任务栏闪烁）
     AlarmNotifier* m_notifier = nullptr;                    // 子对象（parent this）
     QPointer<CriticalAlarmDialog> m_criticalDlg;            // 非模态单例（关闭自动置空）
+
+    // 切片 45：Frameless 接管（target = this，FramelessHelper 随 this 析构）
+    std::unique_ptr<WindowChrome> m_chrome;
 };
 
 }  // namespace ens::ui

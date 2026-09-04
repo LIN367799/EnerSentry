@@ -53,6 +53,9 @@ add_executable(ens_tests
     unit/test_realtime_interact.cpp
     unit/test_overview_gauges.cpp
     unit/test_export_utils.cpp
+    unit/test_frameless_helper.cpp
+    unit/test_titlebar.cpp
+    unit/test_chrome_render.cpp
     integration/test_modbus_loopback.cpp
     integration/test_modbus_tcp_loopback.cpp
     integration/test_modbus_engine_loopback.cpp
@@ -77,7 +80,10 @@ add_executable(ens_tests
     ../apps/device_simulator/src/sim/rtu_slave_port.h
     ../apps/device_simulator/src/sim/rtu_slave_port.cpp
     # 切片 14: 主程序接线器编译进测试进程（与 sim 文件同模式,显式列源）
-    ../apps/ens_app/src/app/EnerSentryApp.cpp)
+    ../apps/ens_app/src/app/EnerSentryApp.cpp
+    # 切片 45：UI 图标资源（resources.qrc → :/icons/*.svg）供 FramelessHelper/TitleBar
+    # 单测使用；ens_tests 主程序 exe 不链 rcc 时 QIcon 加载 SVG 返 null。
+    ${CMAKE_SOURCE_DIR}/resources/resources.qrc)
 # ens::protocol 透传 channel/3rdparty（Catch2 + Qt 头经此注入）；core/sim 头经 device_simulator/src 解析
 # 主程序协议侧（apps/ens_app/src/{protocol,datahub}）通过 datahub/Sample.h + protocol/{Crc16,ModbusFrame,PointTable}.h 取值
 target_include_directories(ens_tests PRIVATE

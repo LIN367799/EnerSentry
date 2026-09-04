@@ -117,6 +117,9 @@ add_library(ens_ui STATIC
     src/ui/common/theme.cpp
     src/ui/common/CsvWriter.cpp
     src/ui/common/AlarmNotifier.cpp
+    src/ui/common/FramelessHelper.cpp
+    src/ui/common/TitleBar.cpp
+    src/ui/common/WindowChrome.cpp
     src/ui/auth/LoginDialog.ui
     src/ui/auth/LoginDialog.cpp
     src/ui/auth/SessionLockDialog.ui

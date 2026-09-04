@@ -1,21 +1,44 @@
 // src/ui/auth/LoginDialog.cpp —— 登录首屏实现。
+// 切片 45：自绘 Frameless 标题栏（去除 Qt 平台插件原生窗口装饰，统一样式）。
 #include "auth/LoginDialog.h"
 #include "ui_LoginDialog.h"
 
 #include "AuthManager.h"
+#include "common/TitleBar.h"
+#include "common/WindowChrome.h"
 
 #include <QIcon>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QVBoxLayout>
 
 namespace ens::ui {
 
 LoginDialog::LoginDialog(ens::business::AuthManager* auth, QWidget* parent)
     : QDialog(parent), ui(new Ui::LoginDialog), m_auth(auth) {
+    // Frameless 必须先于 setupUi 设 flag（setWindowFlags 重建 window handle）
+    setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     ui->setupUi(this);
     setWindowIcon(QIcon(QStringLiteral(":/icons/app_logo.svg")));
     ui->lblLogo->setPixmap(
         QIcon(QStringLiteral(":/icons/app_logo.svg")).pixmap(48, 48));
+
+    // 切片 45：自绘标题栏插入到 rootLayout 顶部
+    auto* tb = new TitleBar(this);
+    tb->setTitle(QStringLiteral("EnerSentry 登录"));
+    // Dialog 模式只保留 close 按钮（保持极简登录首屏）
+    tb->setMinimumVisible(false);
+    tb->setMaximumVisible(false);
+    if (auto* root = qobject_cast<QVBoxLayout*>(layout())) {
+        root->insertWidget(0, tb);
+    }
+    connect(tb, &TitleBar::closeClicked, this, &LoginDialog::reject);
+
+    // 接管窗口装饰（resizable=false 防止边缘误触发）
+    m_chrome = std::make_unique<WindowChrome>(this, tb, /*resizable=*/false);
+
+    // 切片 45：TitleBar 顶 32px + 业务 240px → 固定 380×272
+    setFixedSize(380, 240 + TitleBar::preferredHeight());
 
     connect(ui->btnLogin, &QPushButton::clicked, this, &LoginDialog::onLoginClicked);
     connect(ui->btnCancel, &QPushButton::clicked, this, &LoginDialog::onCancelClicked);

@@ -55,6 +55,11 @@
     <file alias="sim_log.svg">icons/sim_log.svg</file>
     <!-- 应用标识（自绘，储能主题：电池+闪电） -->
     <file alias="app_logo.svg">icons/app_logo.svg</file>
+    <!-- 切片 45：自绘 Frameless 标题栏系统按钮（Feather 同款风格） -->
+    <file alias="window_minimize.svg">icons/window_minimize.svg</file>
+    <file alias="window_maximize.svg">icons/window_maximize.svg</file>
+    <file alias="window_restore.svg">icons/window_restore.svg</file>
+    <file alias="window_close.svg">icons/window_close.svg</file>
   </qresource>
   <qresource prefix="/qss">
     <!-- 暗色工业主题（SRS UI-01；HLD-UI §1.2.1 / LLD-500 §6.3） -->

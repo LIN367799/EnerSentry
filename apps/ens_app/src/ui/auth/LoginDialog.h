@@ -4,10 +4,15 @@
 #pragma once
 
 #include <QDialog>
+#include <memory>
 
 namespace ens::business {
 class AuthManager;
 }  // namespace ens::business
+
+namespace ens::ui {
+class WindowChrome;
+}  // namespace ens::ui
 
 namespace Ui {
 class LoginDialog;
@@ -31,6 +36,7 @@ private:
 
     Ui::LoginDialog* ui;
     ens::business::AuthManager* m_auth;
+    std::unique_ptr<WindowChrome> m_chrome;   // 切片 45：Frameless 接管
 };
 
 }  // namespace ens::ui

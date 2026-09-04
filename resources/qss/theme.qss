@@ -163,3 +163,35 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QSplitter::handle { background: #2a3038; }
 QSplitter::handle:horizontal { width: 2px; }
 QSplitter::handle:vertical { height: 2px; }
+
+/* ── 切片 45：自绘 Frameless 标题栏 ── */
+#EnerSentryTitleBar {
+    background: #1c2127;
+    border-bottom: 1px solid #2a3038;
+}
+#EnerSentryTitleBar QLabel#titleLabel {
+    color: #d8dee6;
+    font-weight: 500;
+    font-size: 13px;
+}
+#EnerSentryTitleBar QPushButton {
+    background: transparent;
+    border: none;
+    padding: 0;
+    min-width: 46px;
+    max-width: 46px;
+    min-height: 32px;
+    max-height: 32px;
+    border-radius: 0;
+    color: #d8dee6;
+}
+#EnerSentryTitleBar QPushButton:hover {
+    background: #2d3540;
+}
+#EnerSentryTitleBar QPushButton#closeBtn:hover {
+    background: #e94560;
+    color: #ffffff;
+}
+#EnerSentryTitleBar QPushButton:pressed {
+    background: #1c2229;
+}

@@ -1,10 +1,13 @@
-// src/ui/main/MainWindow.cpp —— 主窗口框架实现（切片 19；切片 21：UiDeps + SBO + QSettings）。
+// src/ui/main/MainWindow.cpp —— 主窗口框架实现（切片 19；切片 21：UiDeps + SBO + QSettings；
+// 切片 45：自绘 Frameless 标题栏 + 接入 WindowChrome）。
 #include "main/MainWindow.h"
 #include "ui_MainWindow.h"
 
 #include "auth/SessionLockDialog.h"
 #include "charts/RealtimeChartWidget.h"
 #include "common/AlarmNotifier.h"
+#include "common/TitleBar.h"
+#include "common/WindowChrome.h"
 #include "controls/AuditLogDialog.h"
 #include "controls/CriticalAlarmDialog.h"
 #include "controls/SBOControlWidget.h"
@@ -45,9 +48,24 @@ QString roleText(ens::business::UserRole r) {
 
 MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
     : QMainWindow(parent), ui(new Ui::MainWindow), m_deps(deps) {
+    // 切片 45：FramelessWindowHint 必须在 setupUi 之前设（setWindowFlags 重建 window handle）
+    setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     ui->setupUi(this);
     setupIcons();
     setupViews();
+
+    // 切片 45：自绘 TitleBar 置 menubar 上方（QMainWindow::setMenuWidget）
+    auto* tb = new TitleBar(this);
+    tb->setTitle(QStringLiteral("EnerSentry 储能上位机 · v0.19.0"));
+    setMenuWidget(tb);
+    // 接管窗口装饰（resizable=true；主窗可拖拽/缩放）
+    m_chrome = std::make_unique<WindowChrome>(this, tb, /*resizable=*/true);
+    connect(tb, &TitleBar::closeClicked,    this, &MainWindow::close);
+    connect(tb, &TitleBar::minimizeClicked, this, &QWidget::showMinimized);
+    connect(tb, &TitleBar::maximizeToggled, this, [this](bool want) {
+        if (want) this->showMaximized();
+        else      this->showNormal();
+    });
 
     // ── 视图切换（菜单/工具栏动作 → CentralStack）──
     const QVector<QAction*> acts = {
@@ -282,6 +300,18 @@ void MainWindow::saveWindowState() {
 void MainWindow::closeEvent(QCloseEvent* e) {
     saveWindowState();   // 切片 21：窗口几何 + 最后视图持久化
     QMainWindow::closeEvent(e);
+}
+
+// 切片 45：Frameless 下窗体几何变化（最大化/还原）→ 同步 TitleBar 最大化图标。
+// Qt 5.15 没有 QWidget::windowStateChanged 信号（Qt 6 才有），用 changeEvent 拦截
+// QEvent::WindowStateChange。
+void MainWindow::changeEvent(QEvent* e) {
+    if (e->type() == QEvent::WindowStateChange) {
+        if (auto* tb = findChild<TitleBar*>()) {
+            tb->setMaximizeButtonChecked(windowState().testFlag(Qt::WindowMaximized));
+        }
+    }
+    QMainWindow::changeEvent(e);
 }
 
 // ── 切片 37：FR-AL-06 严重告警声光 ──
