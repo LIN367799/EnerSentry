@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <cstdio>
+#include <map>
 #include <set>
 
 namespace ens::app {
@@ -29,9 +30,12 @@ namespace {
 
 /// 单在途轮询窗口（worker 线程私有，无需加锁）
 struct PendingPoll {
+    uint32_t linkId     = 0;
     uint8_t  slave     = 0;
+    uint8_t  functionCode = 0;
     uint16_t startAddr = 0;
     uint16_t qty       = 0;
+    size_t   segmentIndex = 0;
     bool     active    = false;
 };
 
@@ -69,19 +73,21 @@ void SampleSink::onSample(const datahub::Sample& s) noexcept {
 class PollDriver : public QObject {
     Q_OBJECT
 public:
-    /// 一次 FC03 读取的寄存器段（Modbus 上限 125，切片 14 实测坑：qty=332 → sim 回 0x03 异常帧）
+    /// 同一从站、同一寄存器类型的一段连续地址。
     struct Segment {
         uint8_t  slave     = 0;
         uint16_t startAddr = 0;
         uint16_t qty       = 0;
         protocol::RegisterType rt = protocol::RegisterType::HoldingRegister;
+        std::vector<const protocol::PointRuntime*> points;
     };
 
     PollDriver(protocol::ModbusEngine* engine, protocol::PollScheduler* sched,
                std::shared_ptr<const protocol::PointTable> pt, SampleBridge* bridge,
+               EnerSentryApp::RuntimeDiagnosticCounters* diagnostics,
                QObject* parent = nullptr)
         : QObject(parent), m_engine(engine), m_sched(sched), m_pt(std::move(pt)),
-          m_bridge(bridge) {
+          m_bridge(bridge), m_diagnostics(diagnostics) {
         // 轮转从站列表（加载期固化，enabled 过滤）
         for (auto* pr : m_pt->allPoints()) {
             if (pr->enabled) m_slaveList.insert(pr->slaveAddress);
@@ -93,28 +99,7 @@ public:
             lp.isHalfDuplex = false;
             m_sched->setLinkParams(sid, lp);
         }
-        // 预构建读取段：每个从站 [minAddr..maxAddr] 按 125 寄存器上限分片。
-        // 点表 registerAddr 步进 2（Float32 占 2 寄存器），段起点地址 = base + off*2。
-        for (uint8_t sid : m_slaveList) {
-            const auto pts = m_pt->allOnSlave(sid);
-            if (pts.empty()) continue;
-            uint16_t minAddr = pts.front()->registerAddr;
-            uint16_t maxAddr = minAddr;
-            protocol::RegisterType rt = pts.front()->regType;
-            for (const auto* p : pts) {
-                minAddr = std::min(minAddr, p->registerAddr);
-                maxAddr = std::max(maxAddr, p->registerAddr);
-            }
-            const uint16_t total = static_cast<uint16_t>((maxAddr - minAddr) / 2 + 1);
-            for (uint16_t off = 0; off < total; off += kMaxQtyPerRead) {
-                Segment seg;
-                seg.slave     = sid;
-                seg.startAddr = static_cast<uint16_t>(minAddr + off * 2);
-                seg.qty       = std::min<uint16_t>(kMaxQtyPerRead, total - off);
-                seg.rt        = rt;
-                m_segments.push_back(seg);
-            }
-        }
+        buildSegments();
     }
 
 public slots:
@@ -127,13 +112,14 @@ public slots:
     void stopPolling() { m_running = false; }
     void resetPending() { m_pending.active = false; }
 
-    /// 每 tick：取一段 → 入队 → 出队 → 组 FC03 → writeRequest（worker 线程同步）
+    /// 每 tick：取一段 → 入队 → 出队 → 组读请求 → writeRequest（worker 线程同步）
     void onPollTick() {
         if (!m_running) return;
         if (m_pending.active) { scheduleNext(); return; }   // 单在途：上一帧未响应则跳过
         if (m_segments.empty()) { scheduleNext(); return; }
 
-        const Segment& seg = m_segments[m_nextSegIdx % m_segments.size()];
+        const size_t segmentIndex = m_nextSegIdx % m_segments.size();
+        const Segment& seg = m_segments[segmentIndex];
         ++m_nextSegIdx;
 
         // 走 PollScheduler 主干（入队 → 优先级出队 → 熔断统计）
@@ -149,28 +135,61 @@ public slots:
         req.quantity        = seg.qty;
         const qint64 n = m_engine->writeRequest(req, seg.slave);
         if (n < 0) { scheduleNext(); return; }
-        m_pending = PendingPoll{seg.slave, seg.startAddr, seg.qty, true};
+#if !defined(NDEBUG)
+        m_diagnostics->requestsSent.fetch_add(1, std::memory_order_relaxed);
+#endif
+        m_pending = PendingPoll{seg.slave, seg.slave, req.functionCode,
+                                seg.startAddr, seg.qty, segmentIndex, true};
         scheduleNext();
     }
 
     /// worker 线程内：响应 → Sample（PointTable 只读共享，worker 线程安全）
     void onResponseParsed(uint32_t linkId, uint8_t slave,
                           const protocol::ModbusResponse& resp) {
-        (void)linkId;
+        const uint8_t responseFc = static_cast<uint8_t>(resp.functionCode & 0x7Fu);
+        // 写响应由 SBO 等调用方消费，不属于轮询诊断。
+        if (responseFc < 0x01 || responseFc > 0x04) return;
+        if (!m_pending.active || linkId != m_pending.linkId ||
+            slave != m_pending.slave || responseFc != m_pending.functionCode) {
+#if !defined(NDEBUG)
+            m_diagnostics->spurious.fetch_add(1, std::memory_order_relaxed);
+#endif
+            return;
+        }
+
         const bool ok = !resp.isException;
         m_sched->onResponseReceived(slave, ok);
-        if (!m_pending.active) return;
-        if (slave != m_pending.slave) return;          // 防御：野响应（engine 已按 tid 丢弃）
+#if !defined(NDEBUG)
+        m_diagnostics->responsesReceived.fetch_add(1, std::memory_order_relaxed);
+#endif
         m_pending.active = false;
-        if (!ok) return;
-        if (resp.functionCode != 0x03) return;
+        if (!ok) {
+#if !defined(NDEBUG)
+            m_diagnostics->exceptions.fetch_add(1, std::memory_order_relaxed);
+#endif
+            return;
+        }
 
-        const size_t n = resp.registerValues.size();
-        const uint16_t startAddr = m_pending.startAddr;
-        for (size_t i = 0; i < n; ) {
-            const uint16_t addr = static_cast<uint16_t>(startAddr + i);
-            const auto* pr = m_pt->resolve(slave, addr);
-            if (!pr) { ++i; continue; }
+        const Segment& seg = m_segments[m_pending.segmentIndex];
+        const bool bitResponse = seg.rt == protocol::RegisterType::Coil ||
+                                 seg.rt == protocol::RegisterType::DiscreteInput;
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        for (const auto* pr : seg.points) {
+            const size_t offset = static_cast<size_t>(pr->registerAddr - seg.startAddr);
+            double v = 0.0;
+            if (bitResponse) {
+                const size_t byteIndex = offset / 8u;
+                if (offset >= seg.qty || byteIndex >= resp.coilBytes.size()) {
+                    recordDecodeDrop();
+                    continue;
+                }
+                const bool set = (resp.coilBytes[byteIndex] &
+                                  static_cast<uint8_t>(1u << (offset % 8u))) != 0;
+                v = (set ? 1.0 : 0.0) * pr->scaleFactor + pr->offset;
+                publish(pr, now, v);
+                continue;
+            }
+
             // ⚠ 教学版 sim 简化（SIM-IMP §4）：Float32 点按"单寄存器 raw=eng/scale"
             //   编码（encodeFloat32AsHolding），与主程序真 Float32（双寄存器 IEEE754）
             //   语义不一致（切片 14 实测：双寄存器拼 float 全 0）。主程序侧特判对齐；
@@ -178,31 +197,46 @@ public slots:
             const bool simF32 = (pr->dataType == protocol::DataType::Float32);
             const size_t cnt = simF32 ? 1u
                                       : protocol::PointTable::registerCountFor(pr->dataType);
-            if (i + cnt > n) break;
-            double v = 0.0;
+            if (offset + cnt > resp.registerValues.size()) {
+                recordDecodeDrop();
+                continue;
+            }
             if (simF32) {
-                v = static_cast<double>(resp.registerValues[i]) * pr->scaleFactor
+                v = static_cast<double>(resp.registerValues[offset]) * pr->scaleFactor
                     + pr->offset;
             } else {
                 uint8_t bytes[8] = {};
                 const size_t blen = protocol::PointTable::reassembleBytes(
-                    &resp.registerValues[i], cnt, pr->byteOrder, bytes, sizeof(bytes));
-                if (blen > 0) {
-                    v = m_pt->decodeToEngineering(
-                        bytes, blen, pr->dataType, pr->scaleFactor, pr->offset);
+                    &resp.registerValues[offset], cnt, pr->byteOrder, bytes, sizeof(bytes));
+                if (blen == 0) {
+                    recordDecodeDrop();
+                    continue;
                 }
+                v = m_pt->decodeToEngineering(
+                    bytes, blen, pr->dataType, pr->scaleFactor, pr->offset);
             }
-            const qint64 now = QDateTime::currentMSecsSinceEpoch();
-            m_bridge->push(pr->pointId, now, v);   // 跨线程桥：worker 写 → 主线程消费
-            i += cnt;
+            publish(pr, now, v);
         }
     }
 
     /// worker 线程内：帧错误 → 熔断计数 + 清在途
     void onFrameError(uint32_t linkId, uint8_t slave, protocol::FrameErrorKind kind) {
-        (void)linkId;
-        m_sched->onResponseReceived(slave, false);
-        m_pending.active = false;
+        if (kind == protocol::FrameErrorKind::Malformed) {
+#if !defined(NDEBUG)
+            m_diagnostics->malformed.fetch_add(1, std::memory_order_relaxed);
+#endif
+        } else if (kind == protocol::FrameErrorKind::Spurious) {
+#if !defined(NDEBUG)
+            m_diagnostics->spurious.fetch_add(1, std::memory_order_relaxed);
+#endif
+        }
+        // Exception 已由 onResponseParsed 归档；野响应不应打断当前合法轮询。
+        if (m_pending.active && kind != protocol::FrameErrorKind::Exception &&
+            kind != protocol::FrameErrorKind::Spurious &&
+            (slave == 0 || (linkId == m_pending.linkId && slave == m_pending.slave))) {
+            m_sched->onResponseReceived(m_pending.slave, false);
+            m_pending.active = false;
+        }
         emit frameErrorSeen(slave, static_cast<int>(kind));
     }
 
@@ -210,6 +244,77 @@ signals:
     void frameErrorSeen(uint8_t slave, int kind);
 
 private:
+    void buildSegments() {
+        using GroupKey = std::pair<uint8_t, protocol::RegisterType>;
+        std::map<GroupKey, std::vector<const protocol::PointRuntime*>> groups;
+        for (const auto* pr : m_pt->allPoints()) {
+            if (pr->enabled) groups[{pr->slaveAddress, pr->regType}].push_back(pr);
+        }
+
+        for (auto& [key, points] : groups) {
+            std::sort(points.begin(), points.end(), [](const auto* lhs, const auto* rhs) {
+                if (lhs->registerAddr != rhs->registerAddr)
+                    return lhs->registerAddr < rhs->registerAddr;
+                return lhs->pointId < rhs->pointId;
+            });
+
+            const uint16_t maxQty = isBitType(key.second) ? kMaxBitsPerRead
+                                                          : kMaxRegistersPerRead;
+            Segment current;
+            uint32_t endExclusive = 0;
+            for (const auto* pr : points) {
+                const uint32_t pointStart = pr->registerAddr;
+                const uint32_t pointEnd = pointStart + pointWidth(*pr);
+                const bool split = current.points.empty() || pointStart > endExclusive ||
+                                   pointEnd - current.startAddr > maxQty;
+                if (split) {
+                    if (!current.points.empty()) {
+                        current.qty = static_cast<uint16_t>(endExclusive - current.startAddr);
+                        m_segments.push_back(std::move(current));
+                    }
+                    current = Segment{};
+                    current.slave = key.first;
+                    current.rt = key.second;
+                    current.startAddr = pr->registerAddr;
+                    endExclusive = pointEnd;
+                } else {
+                    endExclusive = std::max(endExclusive, pointEnd);
+                }
+                current.points.push_back(pr);
+            }
+            if (!current.points.empty()) {
+                current.qty = static_cast<uint16_t>(endExclusive - current.startAddr);
+                m_segments.push_back(std::move(current));
+            }
+        }
+    }
+
+    static bool isBitType(protocol::RegisterType rt) noexcept {
+        return rt == protocol::RegisterType::Coil ||
+               rt == protocol::RegisterType::DiscreteInput;
+    }
+
+    static uint16_t pointWidth(const protocol::PointRuntime& pr) noexcept {
+        if (isBitType(pr.regType)) return 1;
+        return static_cast<uint16_t>(protocol::PointTable::registerCountFor(pr.dataType));
+    }
+
+    void recordDecodeDrop() noexcept {
+#if !defined(NDEBUG)
+        m_diagnostics->decodeDrops.fetch_add(1, std::memory_order_relaxed);
+#endif
+    }
+
+    void publish(const protocol::PointRuntime* pr, qint64 now, double value) {
+#if !defined(NDEBUG)
+        m_diagnostics->decodeSuccess.fetch_add(1, std::memory_order_relaxed);
+#endif
+        m_bridge->push(pr->pointId, now, value);
+#if !defined(NDEBUG)
+        m_diagnostics->bridgePublished.fetch_add(1, std::memory_order_relaxed);
+#endif
+    }
+
     void scheduleNext() {
         if (m_running) {
             QTimer::singleShot(m_intervalMs, this, &PollDriver::onPollTick);
@@ -220,13 +325,15 @@ private:
     protocol::PollScheduler*                m_sched;
     std::shared_ptr<const protocol::PointTable> m_pt;
     SampleBridge*                           m_bridge;
+    EnerSentryApp::RuntimeDiagnosticCounters* m_diagnostics;
     std::set<uint8_t>                       m_slaveList;   // 从站集合（构造期用）
     std::vector<Segment>                    m_segments;    // 读取段（≤125 寄存器/段）
     size_t                                  m_nextSegIdx = 0;
     int                                     m_intervalMs = 100;
     bool                                    m_running = false;
     PendingPoll                             m_pending{};
-    static constexpr uint16_t               kMaxQtyPerRead = 125;   // Modbus FC03 上限
+    static constexpr uint16_t               kMaxRegistersPerRead = 125;
+    static constexpr uint16_t               kMaxBitsPerRead = 2000;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -310,7 +417,7 @@ bool EnerSentryApp::start() {
     // ⚠ parent 必须为 nullptr：QObject 带 parent 时 moveToThread 静默无效（Qt 文档），
     // 会令 PollDriver 留在主线程 → 与 worker 线程的 engine 跨线程 → responseParsed 走
     // queued 投递（ModbusResponse 未注册 metatype 时静默丢弃，切片 14 实测坑）。
-    m_driver = new PollDriver(&m_engine, &m_scheduler, m_pt, &m_bridge,
+    m_driver = new PollDriver(&m_engine, &m_scheduler, m_pt, &m_bridge, &m_diagnostics,
                               /*parent=*/nullptr);
     m_engine.moveToThread(&m_workerThread);
     m_scheduler.moveToThread(&m_workerThread);
@@ -437,6 +544,35 @@ void EnerSentryApp::stop() {
         m_driver = nullptr;
     }
     std::printf("[ENS] stopped (samples=%d)\n", sampleCount());
+#if !defined(NDEBUG)
+    const RuntimeDiagnostics d = runtimeDiagnostics();
+    std::printf("[ENS][diag] requests=%llu responses=%llu exceptions=%llu malformed=%llu "
+                "spurious=%llu decode_ok=%llu decode_drop=%llu bridge_publish=%llu "
+                "databus_consume=%llu\n",
+                static_cast<unsigned long long>(d.requestsSent),
+                static_cast<unsigned long long>(d.responsesReceived),
+                static_cast<unsigned long long>(d.exceptions),
+                static_cast<unsigned long long>(d.malformed),
+                static_cast<unsigned long long>(d.spurious),
+                static_cast<unsigned long long>(d.decodeSuccess),
+                static_cast<unsigned long long>(d.decodeDrops),
+                static_cast<unsigned long long>(d.bridgePublished),
+                static_cast<unsigned long long>(d.dataBusConsumed));
+#endif
+}
+
+RuntimeDiagnostics EnerSentryApp::runtimeDiagnostics() const noexcept {
+    RuntimeDiagnostics out;
+    out.requestsSent = m_diagnostics.requestsSent.load(std::memory_order_relaxed);
+    out.responsesReceived = m_diagnostics.responsesReceived.load(std::memory_order_relaxed);
+    out.exceptions = m_diagnostics.exceptions.load(std::memory_order_relaxed);
+    out.malformed = m_diagnostics.malformed.load(std::memory_order_relaxed);
+    out.spurious = m_diagnostics.spurious.load(std::memory_order_relaxed);
+    out.decodeSuccess = m_diagnostics.decodeSuccess.load(std::memory_order_relaxed);
+    out.decodeDrops = m_diagnostics.decodeDrops.load(std::memory_order_relaxed);
+    out.bridgePublished = m_diagnostics.bridgePublished.load(std::memory_order_relaxed);
+    out.dataBusConsumed = m_diagnostics.dataBusConsumed.load(std::memory_order_relaxed);
+    return out;
 }
 
 void EnerSentryApp::onChannelConnectionChanged(bool isConnected) {
@@ -471,6 +607,9 @@ void EnerSentryApp::onConsumeTick() {
         s.value     = static_cast<float>(v);
         m_l1.write(pid, s);           // 未注册测点静默丢弃（本切片已按点表全量注册）
         m_bus.broadcast(s);           // 同步调 m_sink.onSample → AlarmEngine + 计数
+#if !defined(NDEBUG)
+        m_diagnostics.dataBusConsumed.fetch_add(1, std::memory_order_relaxed);
+#endif
         emit sampleReady(pid, ts, v);
         // 切片 16：降采样 → 月库（dataDir 非空才做；enqueue 有背压保护）
         if (!m_opts.dataDir.isEmpty()) {

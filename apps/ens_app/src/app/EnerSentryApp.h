@@ -3,11 +3,10 @@
 //
 // 数据流（一次轮询 → 一个 Sample）：
 //   [worker] QTimer::singleShot 自驱动 → PollDriver::onPollTick
-//       PollScheduler.enqueue → dequeueNext → 组 FC03 请求 → ModbusEngine::writeRequest
+//       PollScheduler.enqueue → dequeueNext → 按点表类型组 FC01/02/03/04 请求
 //   [worker] channel.dataReceived → engine.onBytesReceived → responseParsed
-//       PollDriver::onResponseParsed → PointTable.resolve → decodeToEngineering
-//       → emit sampleReady(pointId, ts, value) ──(queued)──► [主线程]
-//   [主线程] EnerSentryApp::onSampleReady → L1SnapshotStore.write
+//       PollDriver::onResponseParsed → 按当前读取段解码 → SampleBridge
+//   [主线程] EnerSentryApp::onConsumeTick → L1SnapshotStore.write
 //       → DataBus.broadcast → SampleSink::onSample → AlarmEngine.onDataUpdated
 //
 // 线程模型（与 LLD-100/200/400 一致）：
@@ -50,6 +49,8 @@
 #include <QThread>
 #include <QTimer>
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <tuple>
@@ -58,6 +59,18 @@
 namespace ens::app {
 
 class PollDriver;   // worker 线程轮询驱动（定义在 EnerSentryApp.cpp，namespace 级而非嵌套类）
+
+struct RuntimeDiagnostics {
+    uint64_t requestsSent    = 0;
+    uint64_t responsesReceived = 0;
+    uint64_t exceptions      = 0;
+    uint64_t malformed       = 0;
+    uint64_t spurious        = 0;
+    uint64_t decodeSuccess   = 0;
+    uint64_t decodeDrops     = 0;
+    uint64_t bridgePublished = 0;
+    uint64_t dataBusConsumed = 0;
+};
 
 // ── 跨线程 Sample 桥：worker 写 / 主线程读（切片 14 实测：Qt queued 信号投递
 //    在本 CLI 场景下不可靠，改用 mutex 保护的有界队列，确定性传递）──
@@ -128,6 +141,7 @@ public:
     // ── 诊断 ──
     int  sampleCount() const noexcept { return m_sampleCount.loadAcquire(); }
     bool isConnected() const noexcept { return m_connected; }
+    RuntimeDiagnostics runtimeDiagnostics() const noexcept;
 
     // ── 切片 16：SBO 控制流（Tier 3 集成测试 / CLI --cmd 注入）──
     /// Select：@return true 状态机接受
@@ -173,6 +187,20 @@ private slots:
     void onFlushTick();     // 切片 16：月库周期 flush（1s）
 
 private:
+    friend class PollDriver;
+
+    struct RuntimeDiagnosticCounters {
+        std::atomic<uint64_t> requestsSent{0};
+        std::atomic<uint64_t> responsesReceived{0};
+        std::atomic<uint64_t> exceptions{0};
+        std::atomic<uint64_t> malformed{0};
+        std::atomic<uint64_t> spurious{0};
+        std::atomic<uint64_t> decodeSuccess{0};
+        std::atomic<uint64_t> decodeDrops{0};
+        std::atomic<uint64_t> bridgePublished{0};
+        std::atomic<uint64_t> dataBusConsumed{0};
+    };
+
     /// 解析 --sbo-cmd 并一次性注入（start 后 800ms，等链路连接）
     void scheduleSboCmd();
     /// SboCommand → FC06 ModbusRequest 跨线程下发
@@ -182,6 +210,7 @@ private:
     bool                     m_started  = false;
     bool                     m_connected = false;
     QAtomicInt               m_sampleCount{0};
+    RuntimeDiagnosticCounters m_diagnostics;
     SampleBridge             m_bridge;        // worker 写 → 主线程消费
 
     // ── 主线程对象（声明序 = 依赖序：m_l1 先于 m_bbx, m_dal 先于 m_l2）──

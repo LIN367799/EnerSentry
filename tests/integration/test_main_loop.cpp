@@ -3,7 +3,7 @@
 // 进程内双轨回环 —— 主程序经 TCP 连测试台从站，验证：
 //   * 连接建立
 //   * 轮询驱动 → Modbus 请求/响应 → 工程值还原 → Sample 流转（L1 + DataBus + AlarmEngine）
-//   * 5s 内收到 >= 10 个 Sample，且点表首点（Rack-01_MaxTemp, pointId=1）值在合理温度区间
+//   * FC01/02/03/04 和同类型稀疏地址段均能发布 Sample
 //
 // 依赖前置（tests/CMakeLists.txt）：
 //   * test_data/sim_pointtable_sample.json 由 file(COPY) 部署到 build 目录
@@ -24,9 +24,13 @@
 #include <QElapsedTimer>
 #include <QThread>
 
+#include <algorithm>
 #include <cstdio>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -150,14 +154,30 @@ TEST_CASE("main_loop: app + simulator loopback delivers samples", "[integration]
     // 语义校验：记录收到的工程值（须在等待循环前连接，避免错过窗口）
     double lastValid = 0.0;
     bool   gotValid  = false;
+    std::map<uint32_t, double> samplesByPoint;
     QObject::connect(&es, &ens::app::EnerSentryApp::sampleReady,
-                     [&](uint32_t, qint64, double v) {
+                     [&](uint32_t pointId, qint64, double v) {
+        samplesByPoint[pointId] = v;
         if (v > 0.001 && v < 10000.0) { lastValid = v; gotValid = true; }
     });
 
+    const uint32_t requiredPointIds[] = {
+        1,   // FC03 HoldingRegister
+        10,  // FC04 InputRegister, first contiguous group
+        18,  // FC04 InputRegister, sparse second group
+        36,  // FC01 Coil, first sparse address
+        37,  // FC01 Coil, second sparse address
+        39,  // FC03 HoldingRegister after a gap
+        42,  // FC02 DiscreteInput
+    };
+    const auto receivedRequiredPoints = [&]() {
+        return std::all_of(std::begin(requiredPointIds), std::end(requiredPointIds),
+                           [&](uint32_t pointId) { return samplesByPoint.count(pointId) != 0; });
+    };
+
     QElapsedTimer t;
     t.start();
-    while (t.elapsed() < 5000 && es.sampleCount() < 10) {
+    while (t.elapsed() < 5000 && !receivedRequiredPoints()) {
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         QThread::msleep(20);
     }
@@ -166,6 +186,14 @@ TEST_CASE("main_loop: app + simulator loopback delivers samples", "[integration]
          << " sampleCount=" << es.sampleCount());
     REQUIRE(connected);
     REQUIRE(es.sampleCount() >= 10);
+    for (uint32_t pointId : requiredPointIds) {
+        INFO("missing pointId=" << pointId);
+        REQUIRE(samplesByPoint.count(pointId) == 1);
+        REQUIRE(std::isfinite(samplesByPoint.at(pointId)));
+    }
+    REQUIRE((samplesByPoint.at(36) == 0.0 || samplesByPoint.at(36) == 1.0));
+    REQUIRE((samplesByPoint.at(37) == 0.0 || samplesByPoint.at(37) == 1.0));
+    REQUIRE((samplesByPoint.at(42) == 0.0 || samplesByPoint.at(42) == 1.0));
 
     // ── 语义校验：至少一个 Sample 的 value 是合理工程值（非 0/非 NaN）──
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
