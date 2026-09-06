@@ -15,9 +15,11 @@
 
 #include <QApplication>
 #include <QColor>
+#include <QIcon>
 #include <QImage>
 #include <QString>
 #include <QWidget>
+#include <QWindow>
 #include <Qt>
 
 #include <catch2/catch_test_macros.hpp>
@@ -156,4 +158,88 @@ TEST_CASE("MainWindow with WindowChrome renders TitleBar above menubar + dark to
     // 验收物：主窗 PNG
     const QString out = QStringLiteral("D:/Study/Qt_host_application_Project/EnerSentry/build/vs2022-debug/mainwindow_chrome.png");
     REQUIRE(img.save(out));
+}
+
+// ───────────────────────── 切片 46：任务栏图标回归 ─────────────────────────
+// 背景：WindowChrome 内部 setWindowFlags 会重建 native window handle(HWND)。
+// Qt 5.15 在 QMainWindow + setMenuWidget(自绘 TitleBar) 路径上，重建后不会把
+// QWidget::windowIcon() 自动写回新 HWND 的 HICON → 任务栏图标退化 Windows 默认空白
+// （截图实证：登录窗正常、主窗空白）。
+// 修复：WindowChrome 新增第 4 参 appIcon，setWindowFlags 之后强制
+// target->setWindowIcon(appIcon) → 内部 windowHandle()->setIcon() 同步 native 层。
+//
+// offscreen 无法读 Windows HICON，但 Qt 的写回链路在 native 层有状态可观测：
+// QWindow::icon()（windowHandle()->icon()）。修复前（重建后未写回）为 null，
+// 修复后非空 —— 作为自动守卫点，删掉 reapply 即回归红灯。
+TEST_CASE("MainWindow restores taskbar icon on WindowChrome HWND rebuild (s46)",
+          "[ui][chrome]") {
+    if (!qApp) {
+        WARN("QApplication not available; skipping icon-restore test.");
+        return;
+    }
+    ens::ui::applyTheme(qApp);
+    QApplication::processEvents();
+
+    // 真实构造路径：setWindowFlags → setupIcons(setWindowIcon) → setMenuWidget
+    // → WindowChrome(appIcon)（切片 46 修复点）
+    ens::ui::UiDeps deps;
+    ens::ui::MainWindow w(deps);
+    w.show();
+    QApplication::processEvents();
+
+    // native 层 icon 必须已写回（否则任务栏空白）
+    QWindow* wh = w.windowHandle();
+    REQUIRE(wh != nullptr);
+    REQUIRE_FALSE(wh->icon().isNull());
+
+    // 与 app_logo 实际图像一致（避免"写回了错误图标"的假绿）
+    const QIcon logo(QStringLiteral(":/icons/app_logo.svg"));
+    const QImage expect = logo.pixmap(48, 48).toImage();
+    const QImage actual = wh->icon().pixmap(48, 48).toImage();
+    REQUIRE(actual.size() == expect.size());
+    REQUIRE(actual.pixelColor(expect.width() / 2, expect.height() / 2)
+                == expect.pixelColor(expect.width() / 2, expect.height() / 2));
+}
+
+TEST_CASE("LoginDialog restores taskbar icon on WindowChrome HWND rebuild (s46)",
+          "[ui][chrome]") {
+    if (!qApp) {
+        WARN("QApplication not available; skipping dialog icon-restore test.");
+        return;
+    }
+    ens::ui::applyTheme(qApp);
+    QApplication::processEvents();
+
+    ens::business::AuthManager auth;
+    ens::ui::LoginDialog dlg(&auth);
+    dlg.show();
+    QApplication::processEvents();
+
+    QWindow* wh = dlg.windowHandle();
+    REQUIRE(wh != nullptr);
+    REQUIRE_FALSE(wh->icon().isNull());
+
+    const QIcon logo(QStringLiteral(":/icons/app_logo.svg"));
+    const QImage expect = logo.pixmap(48, 48).toImage();
+    const QImage actual = wh->icon().pixmap(48, 48).toImage();
+    REQUIRE(actual.size() == expect.size());
+    REQUIRE(actual.pixelColor(expect.width() / 2, expect.height() / 2)
+                == expect.pixelColor(expect.width() / 2, expect.height() / 2));
+}
+
+TEST_CASE("WindowChrome without appIcon keeps old signature working (s46)",
+          "[ui][chrome]") {
+    if (!qApp) {
+        WARN("QApplication not available; skipping compatibility test.");
+        return;
+    }
+    // 向后兼容：不传第 4 参（旧调用方）仍可构造，helper 可用。
+    // 注意：host/tb 必须堆分配 —— WindowChrome/FramelessHelper 会把 helper
+    // parent 到 host，host 析构会 delete 子对象；若 tb 是栈对象再 setParent(host)
+    // 会在作用域结束时 double free（实测 SIGSEGV）。
+    auto* host = new QWidget;
+    auto* tb   = new ens::ui::TitleBar(host);
+    ens::ui::WindowChrome wc(host, tb, /*resizable=*/false);
+    REQUIRE(wc.helper() != nullptr);
+    delete host;   // 级联释放 tb 与 helper（helper parent == host）
 }

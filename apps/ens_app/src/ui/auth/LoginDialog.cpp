@@ -35,7 +35,10 @@ LoginDialog::LoginDialog(ens::business::AuthManager* auth, QWidget* parent)
     connect(tb, &TitleBar::closeClicked, this, &LoginDialog::reject);
 
     // 接管窗口装饰（resizable=false 防止边缘误触发）
-    m_chrome = std::make_unique<WindowChrome>(this, tb, /*resizable=*/false);
+    // 切片 46：显式传 app_logo，setWindowFlags 重建 HWND 后强制 reapply 任务栏图标
+    m_chrome = std::make_unique<WindowChrome>(
+        this, tb, /*resizable=*/false,
+        QIcon(QStringLiteral(":/icons/app_logo.svg")));
 
     // 切片 45：TitleBar 顶 32px + 业务 240px → 固定 380×272
     setFixedSize(380, 240 + TitleBar::preferredHeight());

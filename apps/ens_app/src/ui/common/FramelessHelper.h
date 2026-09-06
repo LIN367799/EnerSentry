@@ -23,6 +23,7 @@
 //     offscreen 平台插件下用兜底 move/resize。
 #pragma once
 
+#include <QIcon>
 #include <QObject>
 #include <QPoint>
 #include <QPointer>
@@ -65,6 +66,17 @@ public:
     void setSnapToMaximize(bool on);
     bool snapToMaximize() const { return m_snapToMaximize; }
 
+    /// 切片 46：Show 后 reapply 应用图标。
+    /// WindowChrome 在 setWindowFlags 重建 HWND 后调一次本 setter；FramelessHelper
+    /// 在首次收到 QEvent::Show 时（platformWindow 已建、native HWND 存在）强制
+    /// target->setWindowIcon(m_appIcon)，确保 WM_SETICON 真正写入 HICON。
+    /// Qt 内存态写回的 setWindowIcon 在 target 未 show 时只存 d->icon 不触发
+    /// platformWindow->setIcon()，而 QMainWindow + setMenuWidget + 二次重建这条路径
+    /// 上 Qt show 内部 apply 走 menubar 分支、不会再 apply widget 自己的 windowIcon
+    /// —— offscreen 测试看不到该分支差异，假绿。Show 事件后 reapply 100% 生效。
+    void setAppIcon(const QIcon& icon) { m_appIcon = icon; }
+    QIcon appIcon() const { return m_appIcon; }
+
     // ── 测试/调试 API ──
     /// 命中测试：给定 target 内部 localPos，返回 0=N 1=S 2=E 3=W 4=NW 5=NE 6=SW 7=SE 8=无
     int hitTestZone(const QPoint& localPos) const;
@@ -100,6 +112,8 @@ private:
     bool m_resizable     = true;
     bool m_movable       = true;
     bool m_snapToMaximize = true;
+    QIcon m_appIcon;                     // 切片 46：Show 后 reapply 应用图标
+    bool  m_iconReapplied = false;       // 切片 46：Show reapply 一次性闸
 
     // 拖拽状态
     bool         m_dragging   = false;

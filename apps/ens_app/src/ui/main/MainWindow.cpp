@@ -59,7 +59,11 @@ MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
     tb->setTitle(QStringLiteral("EnerSentry 储能上位机 · v0.19.0"));
     setMenuWidget(tb);
     // 接管窗口装饰（resizable=true；主窗可拖拽/缩放）
-    m_chrome = std::make_unique<WindowChrome>(this, tb, /*resizable=*/true);
+    // 切片 46：显式传 app_logo —— setWindowFlags 重建 HWND 后强制 reapply，
+    // 否则 QMainWindow+setMenuWidget 路径任务栏图标退化为 Windows 默认空白。
+    m_chrome = std::make_unique<WindowChrome>(
+        this, tb, /*resizable=*/true,
+        QIcon(QStringLiteral(":/icons/app_logo.svg")));
     connect(tb, &TitleBar::closeClicked,    this, &MainWindow::close);
     connect(tb, &TitleBar::minimizeClicked, this, &QWidget::showMinimized);
     connect(tb, &TitleBar::maximizeToggled, this, [this](bool want) {

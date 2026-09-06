@@ -154,6 +154,19 @@ bool FramelessHelper::eventFilter(QObject* obj, QEvent* e) {
             if (wasDragging) emit dragFinished();
             return false;
         }
+        // 切片 46：Show 事件到达时 platformWindow 已建、native HWND 存在；
+        // 此时 setWindowIcon 必触发 QWindow::setIcon → platformWindow->setIcon
+        // → WM_SETICON 真正写入 HWND HICON（构造内 setWindowIcon 时 platformWindow
+        // 尚未建立，只存 d->icon 不发 WM_SETICON）。
+        // QMainWindow+setMenuWidget+二次重建路径下 Qt show 内部 apply 不会走 widget
+        // 自己的 windowIcon，offscreen 测试看不到该分支差异，故必须 Show 后 reapply。
+        case QEvent::Show: {
+            if (!m_iconReapplied && !m_appIcon.isNull() && isTarget && m_target) {
+                m_target->setWindowIcon(m_appIcon);
+                m_iconReapplied = true;
+            }
+            return false;
+        }
         default:
             break;
     }
