@@ -14,7 +14,7 @@
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File tools/run_phase4_acceptance.ps1
-#   Optional: -Scenario xxx.json -RunSeconds N -OutDir <ascii-path>
+#   Optional: -Scenario xxx.json -RunSeconds N -OutDir <ascii-path> -BuildDir <path>
 # NOTE 1: All paths MUST be ASCII-only (Start-Process arg encoding corruption on CJK).
 # NOTE 2: -RunSeconds MUST exceed the scenario's last step time, otherwise the
 #         scenario is aborted and sim_report.json reports INCONCLUSIVE.
@@ -31,7 +31,8 @@
 param(
     [string]$Scenario = "overheat_fast.json",
     [int]$RunSeconds = 12,
-    [string]$OutDir = ""
+    [string]$OutDir = "",
+    [string]$BuildDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,12 +57,19 @@ function Wait-Proc {
 }
 $root = "D:\Study\Qt_host_application_Project\EnerSentry"
 $bin  = Join-Path $root "bin\Debug"
-$td   = Join-Path $root "build\vs2022-debug\test_data"
+if ([string]::IsNullOrEmpty($BuildDir)) {
+    $localBuild = Join-Path $root "build\vs2022-debug-local"
+    $teamBuild = Join-Path $root "build\vs2022-debug"
+    if (Test-Path (Join-Path $localBuild "test_data")) { $BuildDir = $localBuild }
+    else { $BuildDir = $teamBuild }
+}
+$td   = Join-Path $BuildDir "test_data"
 $pt   = Join-Path $td "sim_pointtable_sample.json"
 $rules = Join-Path $td "alarm_rules_sample.json"
 $scen = Join-Path $td "scenarios\$Scenario"
 
 if (-not (Test-Path $bin)) { Write-Host "ERR: $bin not found (run cmake --build first)"; exit 2 }
+if (-not (Test-Path $td)) { Write-Host "ERR: $td not found (run cmake configure/build first, or pass -BuildDir)"; exit 2 }
 if (-not (Test-Path $scen)) { Write-Host "ERR: scenario not found: $scen"; exit 2 }
 
 if ([string]::IsNullOrEmpty($OutDir)) { $OutDir = Join-Path $root "build\phase4_accept_out" }

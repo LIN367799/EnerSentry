@@ -105,7 +105,7 @@ cmake -S . -B build ^
   -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build build --target ens_app
 ```
-> Qt 经 `CMAKE_PREFIX_PATH` 解析，**不经 vcpkg 编译**，因此首次配置不会去编译 Qt（快）；vcpkg 仅提供三个小库，**务必开启 vcpkg binary caching**（默认已启用本地缓存）复用已编产物。实际项目用 `CMakePresets.json` 固化了上述变量，直接 `cmake --preset vs2022-debug` 即可。
+> Qt 经 `CMAKE_PREFIX_PATH` 解析，**不经 vcpkg 编译**，因此首次配置不会去编译 Qt（快）；vcpkg 仅提供三个小库，**务必开启 vcpkg binary caching**（默认已启用本地缓存）复用已编产物。实际项目有两类 preset：团队/CI 使用 `CMakePresets.json` 中的 `vs2022-debug`（路径由环境变量提供），当前机器使用未入库 `CMakeUserPresets.json` 中的 `vs2022-debug-local`。本机日常验证优先执行 `cmake --preset vs2022-debug-local`，不要用旧的 `build/vs2022-debug` 坏缓存。
 
 > 不论依赖怎么来，`ens_3rdparty` 这一个 INTERFACE 库都是**唯一的依赖收口点**（见 §4），业务代码永远只 `target_link_libraries(... PRIVATE ens_3rdparty)`，不关心依赖细节。
 

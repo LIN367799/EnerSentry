@@ -1,8 +1,8 @@
 # ENS-DEV-TEST · EnerSentry 完整测试与使用手册
 
-> 适用版本：HEAD `9988ebe`（V2 切片 44a：数据工件英文化收口仓根 `data/`）
-> 基线：ctest **325/325** 全绿；双进程端到端验收 **PASS**；GUI 双应用冒烟 **PASS**
-> 本文所有命令与输出均于 2026-09-04 在 `D:\Study\Qt_host_application_Project\EnerSentry` 实机执行验证。
+> 适用版本：HEAD（S46 后：工具链入口、FC01/02/03/04 轮询与 Frameless 图标回归已收口）
+> 基线：ctest **346/346** 全绿；双进程端到端验收脚本支持本机/团队构建目录自动选择；GUI 双应用冒烟 **PASS**
+> 本文命令以 `D:\Study\Qt_host_application_Project\EnerSentry` 仓库根为执行目录。
 
 ---
 
@@ -10,7 +10,7 @@
 
 | 我想做什么 | 命令（PowerShell，仓库根目录执行） |
 |---|---|
-| 全量跑一遍测试 | `ctest --preset debug`（325 用例，约 **9 分钟**） |
+| 全量跑一遍测试 | `ctest --test-dir build\vs2022-debug-local --output-on-failure`（本机，346 用例） |
 | 端到端验收（一键） | `powershell -ExecutionPolicy Bypass -File tools\run_phase4_acceptance.ps1` |
 | 长稳浸泡（60 分钟） | `powershell -ExecutionPolicy Bypass -File tools\run_soak_test.ps1 -Minutes 60` |
 | 开 GUI 玩起来 | ① 先起 `bin\Debug\DeviceSimulator.exe` ② 再起 `bin\Debug\ens_app.exe --point-table data\sim_pointtable_sample.json`（登录 `admin` / `Admin@123`） |
@@ -21,8 +21,8 @@
 
 | 层 | 内容 | 入口 | 耗时 | 判据 | 本次实测 |
 |---|---|---|---|---|---|
-| **L0 构建** | Ninja + MSVC v143 全目标 | `cmake --build build/vs2022-debug` | 增量秒级 / 全量分钟级 | `ninja: no work to do.` 或 0 error | ✅ 已最新 |
-| **L1 单测/集成** | Catch2 325 用例（协议/通道/数据/业务/UI 纯函数） | `ctest --preset debug` | **533 s** | 100% passed | ✅ 325/325 |
+| **L0 构建** | Ninja + MSVC v143 全目标 | `cmake --build build\vs2022-debug-local --parallel`（本机） | 增量秒级 / 全量分钟级 | `ninja: no work to do.` 或 0 error | ✅ 已最新 |
+| **L1 单测/集成** | Catch2 346 用例（协议/通道/数据/业务/UI 纯函数） | `ctest --test-dir build\vs2022-debug-local --output-on-failure` | 约 90 s（本机实测） | 100% passed | ✅ 346/346 |
 | **L2 端到端** | 双进程 CLI：模拟器 ⇄ 上位机全链路 | `tools\run_phase4_acceptance.ps1` | 12 s ~ 80 s（随场景） | 6 条断言全 OK | ✅ PASS |
 | **L3 GUI 验收** | 双应用真实联调，7 个页面 + SBO + 断链 | 手动（本文 §5） | 10 ~ 15 min | 人工 checklist | ✅ 冒烟通过（offscreen） |
 | **L4 浸泡** | 断链压力长跑，采样内存/CPU/句柄/入库 | `tools\run_soak_test.ps1` | 自定义（建议 ≥ 60 min） | 内存增长 < 20 MB 且入库速率不衰减 | ✅ 脚本可用（见 §6） |
@@ -38,7 +38,7 @@
 | Visual Studio 2022 | `D:\Program Files\VS2022`（v143 工具集） | MSVC 编译器 + LIB 环境 |
 | Qt | `5.15.2 msvc2019_64`（`D:\HJL\qt\5.15.2\msvc2019_64`） | GUI / Network / SerialPort / Sql / Svg / PrintSupport |
 | vcpkg | `D:\Tool\vcpkg`，triplet `x64-windows` | Catch2 / nlohmann_json / spdlog |
-| CMake + Ninja | CMake ≥ 3.21 | 预设 `vs2022-debug` |
+| CMake + Ninja | CMake ≥ 3.21 | 团队/CI 预设 `vs2022-debug`；本机预设 `vs2022-debug-local` |
 | QCustomPlot | 仓库内 `3rdparty/` vendored | 曲线渲染 |
 
 ### 2.2 构建
@@ -50,7 +50,7 @@
 Import-Module "D:\Program Files\VS2022\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
 Enter-VsDevShell -VsInstallPath "D:\Program Files\VS2022" -Arch amd64 -SkipAutomaticLocation
 
-# ② 配置（clean build 后必做；不要退化成 cmake -B，会丢 vcpkg toolchain）
+# ② 配置（团队/CI：使用环境变量驱动的可移植 preset）
 Set-Location D:\Study\Qt_host_application_Project\EnerSentry
 cmake --preset vs2022-debug
 
@@ -58,12 +58,23 @@ cmake --preset vs2022-debug
 cmake --build build/vs2022-debug
 ```
 
+本机日常验证使用未入库的 `CMakeUserPresets.json`：
+
+```powershell
+Set-Location D:\Study\Qt_host_application_Project\EnerSentry
+cmake --preset vs2022-debug-local
+cmake --build build/vs2022-debug-local --parallel
+ctest --test-dir build/vs2022-debug-local --output-on-failure
+```
+
+`build\vs2022-debug` 只用于环境变量 preset。若该目录来自旧坏缓存，例如 `CMAKE_CXX_COMPILER` / `CMAKE_MAKE_PROGRAM` 为空，或 `ctest -N` 显示 `Total Tests: 0`，不要继续用它做验证；删除后重配，或改用 `build\vs2022-debug-local`。
+
 产物落在 `bin\Debug\`：`ens_app.exe`、`DeviceSimulator.exe`、`ens_tests.exe` + 各 `ens_*.dll` + Qt 运行期 DLL（已由 `ens_windeployqt` 自动部署）。
 
 ### 2.3 构建后自检
 
 ```powershell
-cmake --build build/vs2022-debug     # 期望: ninja: no work to do.
+cmake --build build/vs2022-debug-local --parallel     # 期望: ninja: no work to do.
 Get-ChildItem bin\Debug\*.exe        # 期望: DeviceSimulator.exe / ens_app.exe / ens_tests.exe
 ```
 
@@ -72,10 +83,9 @@ Get-ChildItem bin\Debug\*.exe        # 期望: DeviceSimulator.exe / ens_app.exe
 ## 3. L1 · 单元与集成测试（ctest 325）
 
 ```powershell
-ctest --preset debug                       # 全量，约 533 s
-ctest --preset debug -R pointtable         # 按用例名过滤（注意：匹配的是用例名，不是 tag）
-ctest --preset debug -R alarm -j 8         # 并行
-ctest --preset debug --output-on-failure   # 失败时打印细节
+ctest --test-dir build\vs2022-debug-local --output-on-failure
+ctest --test-dir build\vs2022-debug-local -R pointtable --output-on-failure
+ctest --test-dir build\vs2022-debug-local -R alarm -j 8 --output-on-failure
 ```
 
 测试源码分布：
@@ -88,9 +98,9 @@ ctest --preset debug --output-on-failure   # 失败时打印细节
 本次实测尾部输出：
 
 ```
-325/325 Test #325: alarm query: crosses month boundary and merges desc ...   Passed    2.06 sec
-100% tests passed, 0 tests failed out of 325
-Total Test time (real) = 532.75 sec
+346/346 Test #346: poll_scheduler: enterProbingIfDue after 30s -> PROBING issued immediately ...   Passed
+100% tests passed, 0 tests failed out of 346
+Total Test time (real) = 90.00 sec
 ```
 
 ---
@@ -168,13 +178,13 @@ powershell -ExecutionPolicy Bypass -File tools\run_phase4_acceptance.ps1 -Scenar
 ```bash
 # 终端 1：模拟器（CLI，端口 15060，跑 30 s）
 ./bin/Debug/DeviceSimulator.exe --cli 30 --port 15060 \
-    --pointtable build/vs2022-debug/test_data/sim_pointtable_sample.json
+    --pointtable build/vs2022-debug-local/test_data/sim_pointtable_sample.json
 
 # 终端 2：上位机（CLI，跑 20 s 后自动退出）
 ./bin/Debug/ens_app.exe --cli \
-    --point-table build/vs2022-debug/test_data/sim_pointtable_sample.json \
+    --point-table build/vs2022-debug-local/test_data/sim_pointtable_sample.json \
     --host 127.0.0.1 --port 15060 --run-seconds 20 \
-    --alarm-rules build/vs2022-debug/test_data/alarm_rules_sample.json \
+    --alarm-rules build/vs2022-debug-local/test_data/alarm_rules_sample.json \
     --data-dir build/my_out/db --blackbox-dir build/my_out/bb
 ```
 
@@ -328,7 +338,8 @@ powershell -ExecutionPolicy Bypass -File tools\run_soak_test.ps1 -Minutes 3 -Sam
 | `data\sim_pointtable_full.json` | 全量点表（8 MB，由 `docs/04-测试台/tools/ptgen.py --full` 生成） |
 | `data\alarm_rules_sample.json` | 告警规则样例（Rack-01/02 MaxTemp，Critical，阈值 60/55，3 s 延时，60 s 抑制窗） |
 | `data\scenarios\*.json` | 4 套演练场景（见 §4.2 表） |
-| `build\vs2022-debug\test_data\` | 构建期拷贝到测试运行目录的数据副本（脚本默认读这里） |
+| `build\vs2022-debug-local\test_data\` | 本机 local preset 的测试数据副本（脚本默认优先读这里） |
+| `build\vs2022-debug\test_data\` | 团队/CI 环境变量 preset 的测试数据副本（无 local 目录时脚本回退读这里） |
 | `<--data-dir>\history\YYYYMM\data_YYYYMM.db` | L2 历史月库 |
 | `<--data-dir>\alarm\YYYYMM\alarm_YYYYMM.db` | 告警月库 |
 | `<--blackbox-dir>\critical.swp` | Critical 告警黑匣子交换文件 |
@@ -375,7 +386,8 @@ powershell -ExecutionPolicy Bypass -File tools\run_soak_test.ps1 -Minutes 3 -Sam
 | 症状 | 根因 | 处理 |
 |---|---|---|
 | `LNK1104: 无法打开文件“ws2_32.lib”` | 在 git bash 里构建，缺 `LIB` 环境变量 | 一律用 VS 开发壳 PowerShell |
-| `cmake -B` 后 vcpkg 依赖找不到 | 未走预设，丢了 `CMAKE_TOOLCHAIN_FILE` | 用 `cmake --preset vs2022-debug` |
+| `cmake -B` 后 vcpkg 依赖找不到 | 未走预设，丢了 `CMAKE_TOOLCHAIN_FILE` | 团队/CI 用 `cmake --preset vs2022-debug`；本机用 `cmake --preset vs2022-debug-local` |
+| `build\vs2022-debug` 构建报 `no such file or directory` 或 `ctest -N` 为 0 | 旧坏缓存未配置出有效 Ninja/测试清单 | 删除 `build\vs2022-debug` 后按环境变量重配，或使用 `build\vs2022-debug-local` |
 | `[ENS] usage: --point-table <json> is required`（退出码 2） | 生产设计：禁止无点表启动 | 补 `--point-table`；VS 调试填「命令参数」 |
 | `sim_report result=INCONCLUSIVE` | `-RunSeconds` < 场景最后一步时刻 | 按 §4.2 表加长（脚本会打印 WARN 与建议值） |
 | 上位机弹「通信内核启动失败」 | 模拟器未先起 / 端口不一致 / 点表不同源 | 先起模拟器；两边端口与点表保持一致 |
@@ -390,12 +402,12 @@ powershell -ExecutionPolicy Bypass -File tools\run_soak_test.ps1 -Minutes 3 -Sam
 
 ---
 
-## 10. 本次（切片 44b）验证记录
+## 10. 历史验证记录（切片 44b）
 
 | 项 | 结果 |
 |---|---|
 | `cmake --build` | `ninja: no work to do.`（产物与 HEAD 一致） |
-| `ctest --preset debug` | **325/325 passed**，533 s |
+| `ctest --preset debug` | **325/325 passed**，533 s（历史记录；当前本机入口见 §3，使用 `build\vs2022-debug-local`，346 tests） |
 | 双进程验收 · overheat_fast @12 s | **PASS**（6/6 断言） |
 | 双进程验收 · voltage_fault_drill @50 s | **PASS**（346 samples） |
 | 双进程验收 · overheat_drill @80 s | **PASS**（549 samples） |

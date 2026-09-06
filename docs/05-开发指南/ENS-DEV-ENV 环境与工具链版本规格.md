@@ -99,24 +99,29 @@
 
 ### 4.2 配置并构建（Ninja + MSVC + 独立 Qt + vcpkg）
 
-```bat
-:: 1) 先安装项目依赖（仅需一次）
-D:\Tool\vcpkg\vcpkg.exe install catch2 nlohmann-json spdlog --triplet x64-windows
+团队/CI 使用入库的环境变量 preset。该入口不写任何开发者本机绝对路径：
 
-:: 2) 配置
-cmake -G Ninja ^
-  -S D:\Study\Qt_host_application_Project\EnerSentry ^
-  -B D:\Study\Qt_host_application_Project\EnerSentry\build ^
-  -DCMAKE_BUILD_TYPE=Debug ^
-  -DCMAKE_PREFIX_PATH="D:\HJL\qt\5.15.2\msvc2019_64" ^
-  -DCMAKE_TOOLCHAIN_FILE="D:\Tool\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
-  -DVCPKG_TARGET_TRIPLET=x64-windows
+```powershell
+$env:QT_ROOT = "<Qt>/5.15.2/msvc2019_64"
+$env:VCPKG_ROOT = "<vcpkg>"
+$env:NINJA_EXECUTABLE = "<ninja>/ninja.exe"
+$env:MSVC_CXX_COMPILER = "<VS2022>/VC/Tools/MSVC/<version>/bin/Hostx64/x64/cl.exe"
 
-:: 3) 编译
-cmake --build D:\Study\Qt_host_application_Project\EnerSentry\build
+cmake --preset vs2022-debug
+cmake --build build/vs2022-debug --parallel
 ```
 
-> 说明：`CMAKE_PREFIX_PATH` 让 CMake 在 `D:\HJL\qt\5.15.2\msvc2019_64` 找到 Qt5；`CMAKE_TOOLCHAIN_FILE` 让 vcpkg 注入 Catch2 / nlohmann_json / spdlog。QCustomPlot 不进 vcpkg，作为源码 vendored 进 `3rdparty/` 随工程编译（见 §3）。`build/` 为 out-of-source，gitignore，勿入库。
+当前机器使用未入库的 `CMakeUserPresets.json`，其中可保留本机绝对路径：
+
+```powershell
+cmake --preset vs2022-debug-local
+cmake --build build/vs2022-debug-local --parallel
+ctest --test-dir build/vs2022-debug-local --output-on-failure
+```
+
+> 说明：`ENS_QT_ROOT` / `QT_ROOT` 让 CMake 在 `D:\HJL\qt\5.15.2\msvc2019_64` 找到 Qt5；`CMAKE_TOOLCHAIN_FILE` 让 vcpkg 注入 Catch2 / nlohmann_json / spdlog。QCustomPlot 不进 vcpkg，作为源码 vendored 进 `3rdparty/` 随工程编译（见 §3）。`build/` 为 out-of-source，gitignore，勿入库。
+>
+> 若 `build\vs2022-debug` 来自旧坏缓存（例如 `CMAKE_CXX_COMPILER` 或 `CMAKE_MAKE_PROGRAM` 为空，或 `ctest -N` 显示 0 tests），不要继续用它验证；删除该目录后按环境变量 preset 重配，或直接使用本机 `build\vs2022-debug-local`。
 
 ### 4.3 非「VS 开发提示符」环境的 MSVC 环境装配
 

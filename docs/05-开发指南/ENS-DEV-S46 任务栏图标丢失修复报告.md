@@ -66,7 +66,7 @@ native HICON 无法在 offscreen 直接读，但 Qt 写回链路在 native 层�
 | 层级 | 范围 | 结果 |
 |---|---|---|
 | 定向 | `ens_tests "[chrome]"` | ✅ 8/8（37 assertions） |
-| 全量 | `ctest --test-dir build/vs2022-debug` | ✅ **346/346（0 failed，324.6 s）** |
+| 全量 | `ctest --test-dir build/vs2022-debug-local --output-on-failure` | ✅ **346/346（0 failed）** |
 
 ### 5.3 待用户手动目视（桌面平台）
 

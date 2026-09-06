@@ -15,14 +15,15 @@
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File tools/run_soak_test.ps1 -Minutes 60
-#   Optional: -Scenario xxx.json -SampleSec 30 -OutDir <ascii-path>
+#   Optional: -Scenario xxx.json -SampleSec 30 -OutDir <ascii-path> -BuildDir <path>
 # NOTE: all paths ASCII-only (PS 5.1 CJK arg corruption).
 
 param(
     [int]$Minutes = 60,
     [string]$Scenario = "random_linkloss_stress.json",
     [int]$SampleSec = 30,
-    [string]$OutDir = ""
+    [string]$OutDir = "",
+    [string]$BuildDir = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,12 +49,19 @@ function Wait-Proc {
 
 $root = "D:\Study\Qt_host_application_Project\EnerSentry"
 $bin  = Join-Path $root "bin\Debug"
-$td   = Join-Path $root "build\vs2022-debug\test_data"
+if ([string]::IsNullOrEmpty($BuildDir)) {
+    $localBuild = Join-Path $root "build\vs2022-debug-local"
+    $teamBuild = Join-Path $root "build\vs2022-debug"
+    if (Test-Path (Join-Path $localBuild "test_data")) { $BuildDir = $localBuild }
+    else { $BuildDir = $teamBuild }
+}
+$td   = Join-Path $BuildDir "test_data"
 $pt   = Join-Path $td "sim_pointtable_sample.json"
 $rules = Join-Path $td "alarm_rules_sample.json"
 $scen = Join-Path $td "scenarios\$Scenario"
 
 if (-not (Test-Path $bin)) { Write-Host "ERR: $bin not found (run cmake --build first)"; exit 2 }
+if (-not (Test-Path $td)) { Write-Host "ERR: $td not found (run cmake configure/build first, or pass -BuildDir)"; exit 2 }
 if (-not (Test-Path $scen)) { Write-Host "ERR: scenario not found: $scen"; exit 2 }
 
 if ([string]::IsNullOrEmpty($OutDir)) { $OutDir = Join-Path $root "build\soak_out" }

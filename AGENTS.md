@@ -38,7 +38,12 @@ Qt、编译器和第三方库必须使用相同 ABI 体系。不得使用 MinGW 
 
 ## 3. 构建方法
 
-推荐先加载 VS2022 x64 开发环境，再使用 Ninja 配置。项目预设位于 `CMakePresets.json`，不包含任何开发者本机绝对路径；配置通过环境变量提供 Qt、vcpkg、Ninja 和 MSVC 编译器位置。
+推荐先加载 VS2022 x64 开发环境，再使用 Ninja 配置。项目有两类构建入口：
+
+- `vs2022-debug` / `vs2022-release`：团队、CI 和可移植验证入口，定义在 `CMakePresets.json`，不包含任何开发者本机绝对路径；配置通过环境变量提供 Qt、vcpkg、Ninja 和 MSVC 编译器位置。
+- `vs2022-debug-local` / `vs2022-release-local`：当前机器入口，定义在未入库的 `CMakeUserPresets.json`，可写本机绝对路径；本机日常验证优先使用 `build/vs2022-debug-local`。
+
+如果 `build/vs2022-debug` 是旧坏缓存（例如 `CMAKE_CXX_COMPILER` 或 `CMAKE_MAKE_PROGRAM` 为空，或 `ctest -N` 显示 0 tests），不要继续在该目录验证；删除该构建目录后按环境变量 preset 重配，或直接改用本机 `vs2022-debug-local`。
 
 在 VS2022 x64 Developer PowerShell 中设置当前机器的工具路径（路径按本机安装位置调整）：
 
@@ -61,7 +66,15 @@ cmake --preset vs2022-debug
 cmake --build build/vs2022-debug --parallel
 ```
 
-Release 使用 `cmake --preset vs2022-release` 和 `cmake --build build/vs2022-release --parallel`。配置阶段会拒绝 MinGW/g++、非 cl.exe 编译器、旧版 MSVC 以及非 `msvc2019_64`/非 5.15.2 Qt；不会等到链接阶段才报 ABI 错误。
+本机日常验证可使用：
+
+```powershell
+cmake --preset vs2022-debug-local
+cmake --build build/vs2022-debug-local --parallel
+ctest --test-dir build/vs2022-debug-local --output-on-failure
+```
+
+Release 使用 `cmake --preset vs2022-release` / `cmake --build build/vs2022-release --parallel`，或本机 `vs2022-release-local`。配置阶段会拒绝 MinGW/g++、非 cl.exe 编译器、旧版 MSVC 以及非 `msvc2019_64`/非 5.15.2 Qt；不会等到链接阶段才报 ABI 错误。
 
 默认构建目标包括：
 
@@ -113,7 +126,7 @@ TODO：GUI 默认点表路径、完整部署启动器和所有运行参数仍需
 配置并编译后，可使用：
 
 ```powershell
-ctest --test-dir build/vs2022-debug --output-on-failure
+ctest --test-dir build/vs2022-debug-local --output-on-failure
 ```
 
 也可以直接运行：
