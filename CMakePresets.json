@@ -8,28 +8,22 @@
   "configurePresets": [
     {
       "name": "vs2022-debug",
-      "displayName": "VS2022 Debug (Qt5 + vcpkg)",
-      "description": "Ninja + MSVC v143，Qt5 经 CMAKE_PREFIX_PATH，vcpkg 经 toolchain 注入 Catch2/nlohmann_json/spdlog",
+      "displayName": "VS2022 Debug (Qt 5.15.2 + vcpkg)",
+      "description": "Ninja + MSVC v143; paths are supplied through the documented environment variables",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/vs2022-debug",
-      "architecture": {
-        "value": "x64",
-        "strategy": "external"
-      },
-      "toolset": {
-        "value": "v143",
-        "strategy": "external"
-      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_PREFIX_PATH": "D:/HJL/qt/5.15.2/msvc2019_64",
-        "CMAKE_TOOLCHAIN_FILE": "D:/Tool/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_CXX_COMPILER": "$env{MSVC_CXX_COMPILER}",
+        "CMAKE_MAKE_PROGRAM": "$env{NINJA_EXECUTABLE}",
+        "ENS_QT_ROOT": "$env{QT_ROOT}",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {
       "name": "vs2022-release",
-      "displayName": "VS2022 Release (Qt5 + vcpkg)",
+      "displayName": "VS2022 Release (Qt 5.15.2 + vcpkg)",
       "inherits": "vs2022-debug",
       "binaryDir": "${sourceDir}/build/vs2022-release",
       "cacheVariables": {
@@ -40,7 +34,7 @@
       "hidden": true,
       "name": "Qt",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
+        "ENS_QT_ROOT": "$env{QT_ROOT}"
       },
       "vendor": {
         "qt-project.org/Qt": {

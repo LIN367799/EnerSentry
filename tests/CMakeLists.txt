@@ -91,19 +91,10 @@ target_include_directories(ens_tests PRIVATE
     ../apps/device_simulator/src
     ../apps/ens_app/src)
 target_link_libraries(ens_tests PRIVATE ens::3rdparty ens::protocol ens::datahub ens::business ens::ui Catch2::Catch2)
-# B3 起原生 socket（winsock2）：用 find_library 给完整路径 + 显式 LIBPATH(避免依赖
-#  PowerShell Enter-VsDevShell 的 LIB env 在 ninja→cmd spawn 链中丢失)
+# B3 起原生 socket（winsock2）。CMake's MSVC platform already provides the
+# Windows SDK search paths; do not encode a particular SDK or VS installation.
 if(WIN32)
-    find_library(WS2_32_LIB NAMES ws2_32 PATHS
-        "C:/Program Files (x86)/Windows Kits/10/Lib"
-        "C:/Program Files/Windows Kits/10/Lib"
-        REQUIRED)
-    target_link_libraries(ens_tests PRIVATE "${WS2_32_LIB}")
-    # 显式加 Windows SDK + MSVC lib 路径,供 link 找 kernel32/user32/... 等系统库
-    target_link_options(ens_tests PRIVATE
-        "LINKER:/LIBPATH:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64"
-        "LINKER:/LIBPATH:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64"
-        "LINKER:/LIBPATH:D:/Program Files/VS2022/VC/Tools/MSVC/14.44.35207/lib/x64")
+    target_link_libraries(ens_tests PRIVATE ws2_32)
 endif()
 
 # 把 sim_pointtable_sample.json 拷贝到 ens_tests 输出目录的 test_data/ 下。
@@ -128,15 +119,6 @@ file(COPY
 # 切片 16：告警规则 sample 复制到 test_data/（test_alarm_rule_loader / test_main_loop 用）
 file(COPY "${CMAKE_SOURCE_DIR}/data/alarm_rules_sample.json"
      DESTINATION ${CMAKE_BINARY_DIR}/test_data)
-
-# Qt SQL driver:Debug 模式需要 qsqlited.dll 在 plugins/sqldrivers/ 子目录
-# (在 CMake configure 时同步复制,避免手工操作;依赖 Qt 5.15 默认布局)
-set(_QT_SQL_PLUGIN_DIR "D:/HJL/qt/5.15.2/msvc2019_64/plugins/sqldrivers")
-if(EXISTS "${_QT_SQL_PLUGIN_DIR}/qsqlited.dll")
-    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin/Debug/plugins/sqldrivers)
-    file(COPY "${_QT_SQL_PLUGIN_DIR}/qsqlited.dll"
-         DESTINATION ${CMAKE_BINARY_DIR}/bin/Debug/plugins/sqldrivers)
-endif()
 
 # 2026-08-30 修复 ens_tests.exe 桌面双击运行报"找不到 Qt5Sqld.dll":
 #   根因:ens_tests 链接 static ens::datahub → 内联 SQLiteDataAccess.cpp → PE
