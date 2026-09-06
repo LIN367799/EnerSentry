@@ -21,6 +21,8 @@
 
 #include <QMetaType>
 
+#include <cstdint>
+
 #include "protocol/ModbusEngine.h"   // 含 ModbusResponse,触发 Q_DECLARE_METATYPE
 #include "common/test_helpers.h"      // appInstance() Meyers singleton
 
@@ -31,6 +33,9 @@ int main(int argc, char* argv[]) {
     (void)app;
 
     // ModbusEngine 跨线程 emit 必备:ModbusResponse 含 std::vector,需注册到 Qt 元类型系统
+    qRegisterMetaType<uint8_t>("uint8_t");
+    qRegisterMetaType<uint16_t>("uint16_t");
+    qRegisterMetaType<uint32_t>("uint32_t");
     qRegisterMetaType<ens::protocol::ModbusResponse>("ens::protocol::ModbusResponse");
 
     // 透传 argv 给 Catch2 session

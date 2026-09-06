@@ -14,9 +14,14 @@ bool OpenGLDetector::isOpenGlAvailable() {
 }
 
 bool OpenGLDetector::applyTo(QCustomPlot* plot) {
+#ifdef QCUSTOMPLOT_USE_OPENGL
     if (!plot || !isOpenGlAvailable()) return false;
     plot->setOpenGl(true);
-    return true;
+    return plot->openGl();
+#else
+    (void)plot;
+    return false;
+#endif
 }
 
 }  // namespace ens::ui

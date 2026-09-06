@@ -19,15 +19,29 @@
 #include <QApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
+#include <QFileInfo>
+#include <QMetaType>
 #include <QMessageBox>
 #include <QTimer>
 
+#include <cstdint>
 #include <cstdio>
 
 namespace {
 
 // GUI 模式默认用户表路径（缺失时 AuthManager 回退内置 admin/operator 并告警）
 const char* kDefaultUsersPath = "config/users.json";
+const char* kRepoUsersPath = "apps/ens_app/config/users.json";
+
+QString resolveUsersPath(const QCommandLineParser& parser, const QCommandLineOption& usersOpt) {
+    const QString requestedPath = parser.value(usersOpt);
+    if (parser.isSet(usersOpt) || QFileInfo::exists(requestedPath)) {
+        return requestedPath;
+    }
+
+    const QString repoPath = QString::fromLatin1(kRepoUsersPath);
+    return QFileInfo::exists(repoPath) ? repoPath : requestedPath;
+}
 
 }  // namespace
 
@@ -40,6 +54,13 @@ int main(int argc, char* argv[]) {
     QApplication::setApplicationName("ens_app");
     QApplication::setApplicationVersion("0.19.0");
     QApplication::setOrganizationName("EnerSentry");
+
+    // Qt queued connections use string-based type names.  Fixed-width integer
+    // aliases such as uint8_t are not registered by Qt by default, but several
+    // cross-thread diagnostics/signals expose slave/link IDs with these types.
+    qRegisterMetaType<uint8_t>("uint8_t");
+    qRegisterMetaType<uint16_t>("uint16_t");
+    qRegisterMetaType<uint32_t>("uint32_t");
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
@@ -78,6 +99,7 @@ int main(int argc, char* argv[]) {
     parser.process(app);
 
     const bool cliMode = parser.isSet(cliOpt);
+    const QString usersPath = resolveUsersPath(parser, usersOpt);
 
     ens::app::EnerSentryApp::Options opts;
     opts.host            = parser.value(hostOpt);
@@ -117,7 +139,7 @@ int main(int argc, char* argv[]) {
     // ───────────────────────── GUI 模式（切片 19）─────────────────────────
     // 1) 认证（FR-AUTH-01：登录成功才进主窗）
     ens::business::AuthManager auth;
-    auth.loadUsersFromJson(parser.value(usersOpt));
+    auth.loadUsersFromJson(usersPath);
 
     // 2) 暗色主题（SRS UI-01）
     ens::ui::applyTheme(&app);
@@ -170,7 +192,7 @@ int main(int argc, char* argv[]) {
     deps.dataAccess = es.dataAccess();   // 切片 24：历史查询（未启用 --data-dir 时查询返空）
     deps.alarmAccess = es.alarmAccess(); // 切片 36：告警历史查询（FR-AL-11）
     deps.l1Replay = es.l1Replay();       // 切片 38：L1 高频回放（FR-AL-12）
-    deps.usersPath = parser.value(usersOpt);   // 切片 31：用户管理保存目标
+    deps.usersPath = usersPath;                // 切片 31：用户管理保存目标
     deps.pointTablePath = opts.pointTablePath; // 切片 41：配置导出源（FR-EXP-06）
     deps.dataRootDir = opts.dataDir;           // 切片 41：历史库备份根（FR-EXP-05）
     deps.linkLabel = QStringLiteral("%1:%2").arg(opts.host).arg(opts.port);
