@@ -115,6 +115,14 @@ MainWindow::MainWindow(const UiDeps& deps, QWidget* parent)
 
 MainWindow::~MainWindow() {
     m_statusTimer.stop();
+    // 切片 46 修复：构造时执行了 qApp->installEventFilter(this)（切片 26 全局活动检测
+    // FR-AUTH-05）。析构必须摘除，否则 qApp 继续持有本对象的悬空指针，后续任何事件
+    // （含其它测试用例创建的窗口）仍会派发到已释放的 MainWindow → 访问已释放内存 →
+    // STATUS_HEAP_CORRUPTION(0xc0000374)。
+    // 这也是 LoginDialog 路径（未装全局过滤器）不复现、MainWindow 路径必崩的原因。
+    if (qApp) {
+        qApp->removeEventFilter(this);
+    }
     delete ui;
 }
 
