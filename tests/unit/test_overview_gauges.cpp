@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QPixmap>
 #include <QTemporaryDir>
+#include <QTreeWidget>
 
 #include "ui/common/OverviewPoints.h"
 #include "ui/controls/SocGauge.h"
@@ -141,6 +142,43 @@ TEST_CASE("overview widget: bus samples drive soc average and heat cells",
     w.refreshNow();
     REQUIRE(w.lastSoc() == Catch::Approx(75.0));   // (88+62)/2
     REQUIRE(w.heatCellCount() == 2);
+    w.close();
+    pump(50);
+}
+
+TEST_CASE("overview widget: point table builds rack drilldown tree",
+          "[ui][overview][drill][tier2]") {
+    QTemporaryDir tmp;
+    REQUIRE(tmp.isValid());
+    auto pt = makePointTable(tmp.path());
+
+    DataBus bus;
+    OverviewWidget w(&bus, pt);
+    w.resize(1100, 480);
+    w.show();
+    pump(100);
+
+    auto* tree = w.findChild<QTreeWidget*>(QStringLiteral("drillTree"));
+    REQUIRE(tree != nullptr);
+    REQUIRE(w.drillRackCount() == 2);
+    REQUIRE(tree->topLevelItemCount() == 1);
+    auto* station = tree->topLevelItem(0);
+    REQUIRE(station->childCount() == 2);
+    auto* rack1 = station->child(0);
+    REQUIRE(rack1->text(0) == QStringLiteral("Rack-01"));
+    REQUIRE(rack1->childCount() == 2);
+
+    bus.broadcast(mkSample(2, 88.0f));
+    bus.broadcast(mkSample(1, 34.2f));
+    w.refreshNow();
+
+    tree->setCurrentItem(rack1);
+    REQUIRE(w.drillBreadcrumb() == QStringLiteral("电站 / Rack-01"));
+    REQUIRE(rack1->text(1).contains(QStringLiteral("SOC 88.0%")));
+
+    tree->setCurrentItem(rack1->child(0));
+    REQUIRE(w.drillBreadcrumb().contains(QStringLiteral("电站 / Rack-01 / Rack-01_MaxTemp")));
+    REQUIRE(rack1->child(0)->text(1).contains(QStringLiteral("34.20")));
     w.close();
     pump(50);
 }

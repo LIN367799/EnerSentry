@@ -75,7 +75,7 @@ int main(int argc, char* argv[]) {
     std::string scenarioPath;
     std::string exportDir;
     // 切片 44a：数据工件迁至仓根 data/（原 docs/04-测试台/data/），默认路径全 ASCII
-    std::string pointtablePath = "data/sim_pointtable_sample.json";
+    std::string pointtablePath = "data\\sim_pointtable_full.json";
 
     const int rc = parseCli(argc, argv, &cliMode, &scenarioPath, &exportDir,
                             &pointtablePath, &tcpPort, &runSec);

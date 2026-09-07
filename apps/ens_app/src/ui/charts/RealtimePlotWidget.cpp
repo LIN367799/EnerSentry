@@ -42,6 +42,7 @@ QString fmtAxisMs(double keySeconds) {
 }
 
 QColor kItemTextColor = QColor(0xd8, 0xde, 0xe6);
+constexpr double kVisibleWindowSeconds = 60.0;
 
 }  // namespace
 
@@ -66,6 +67,9 @@ RealtimePlotWidget::RealtimePlotWidget(QWidget* parent) : QWidget(parent) {
     m_plot->xAxis->setLabel(QStringLiteral("时间 (s)"));
     m_plot->yAxis->setLabel(QStringLiteral("工程值"));
     m_plot->axisRect()->setBackground(QBrush(QColor(0x1c, 0x21, 0x27)));
+    auto ticker = QSharedPointer<QCPAxisTickerDateTime>::create();
+    ticker->setDateTimeFormat(QStringLiteral("HH:mm:ss"));
+    m_plot->xAxis->setTicker(ticker);
 
     // OpenGL 加速（无独显/远程会话自动回退软件渲染，HLD-UI §4.3）
     OpenGLDetector::applyTo(m_plot);
@@ -100,20 +104,22 @@ void RealtimePlotWidget::addChannel(uint32_t pointId, const QString& name, const
     g->setName(name);
     g->setPen(QPen(buf->color, 1.5));
     g->setLineStyle(QCPGraph::lsLine);
-    g->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssNone));
+    g->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 2));
     m_plot->legend->setVisible(true);
     m_plot->legend->setBrush(QBrush(QColor(0x1c, 0x21, 0x27)));
     m_plot->legend->setTextColor(QColor(0xd8, 0xde, 0xe6));
     m_plot->legend->setBorderPen(QPen(QColor(0x34, 0x3b, 0x47)));
+    m_graphByPoint.insert(pointId, g);
 
     emit channelAdded(pointId, name);
 }
 
 void RealtimePlotWidget::removeChannel(uint32_t pointId) {
-    const int idx = m_buf.keys().indexOf(pointId);
+    QCPGraph* g = graphAt(pointId);
     m_buf.remove(pointId);
-    if (idx >= 0 && idx < m_plot->graphCount()) {
-        m_plot->removeGraph(idx);
+    m_graphByPoint.remove(pointId);
+    if (g) {
+        m_plot->removeGraph(g);
     }
     detachReadoutItems();   // 悬停 tracer 可能引用被删 graph
 }
@@ -132,6 +138,7 @@ void RealtimePlotWidget::setRefreshActive(bool active) {
 
 void RealtimePlotWidget::clearAll() {
     m_buf.clear();
+    m_graphByPoint.clear();
     m_plot->clearGraphs();
     detachReadoutItems();
     m_plot->replot();
@@ -151,32 +158,38 @@ void RealtimePlotWidget::onBatchRepaint() {
     if (m_buf.isEmpty()) return;
     const int pixelBudget = std::max(64, width() / std::max(1, m_buf.size()));
     const int target = std::min({MAX_POINTS_PER_CHANNEL, pixelBudget});
+    double latestKey = 0.0;
 
     for (auto it = m_buf.begin(); it != m_buf.end(); ++it) {
         ChannelBuffer& buf = *it.value();
-        const int idx = m_buf.keys().indexOf(it.key());
-        if (idx < 0 || idx >= m_plot->graphCount()) continue;
-        QCPGraph* g = m_plot->graph(idx);
+        QCPGraph* g = graphAt(it.key());
         if (!g) continue;
 
+        QVector<QPointF> batch;
         {
             QWriteLocker lock(&buf.rw);
-            buf.ready = (buf.pending.size() > target)
+            batch = (buf.pending.size() > target)
                 ? RenderDownsampler::minMaxBucketDownSample(buf.pending, target)
                 : buf.pending;
             buf.pending.clear();
         }
-        if (buf.ready.isEmpty()) continue;
+        if (batch.isEmpty()) continue;
 
-        // 提取 keys/values 一次拷贝 setData（QCustomPlot 要求已排序 keys）
+        // 提取 keys/values 一次拷贝追加；历史数据保留在滚动窗口内。
         QVector<double> keys, vals;
-        keys.reserve(buf.ready.size());
-        vals.reserve(buf.ready.size());
-        for (const QPointF& p : buf.ready) {
+        keys.reserve(batch.size());
+        vals.reserve(batch.size());
+        for (const QPointF& p : batch) {
             keys.push_back(p.x());
             vals.push_back(p.y());
         }
-        g->setData(keys, vals, /*alreadySorted=*/true);
+        g->addData(keys, vals, /*alreadySorted=*/true);
+        latestKey = std::max(latestKey, keys.back());
+        g->data()->removeBefore(latestKey - kVisibleWindowSeconds);
+    }
+
+    if (latestKey > 0.0) {
+        m_plot->xAxis->setRange(latestKey, kVisibleWindowSeconds, Qt::AlignRight);
     }
 
     // 切片 39：rescale 按轴分组（左/右各自独立，FR-RT-08）
@@ -195,9 +208,17 @@ void RealtimePlotWidget::onBatchRepaint() {
 // ─────────────────────────── 切片 39：分轴 / 悬停 / 标尺 ───────────────────────────
 
 QCPGraph* RealtimePlotWidget::graphAt(uint32_t pointId) const {
-    const int idx = m_buf.keys().indexOf(pointId);
-    if (idx < 0 || idx >= m_plot->graphCount()) return nullptr;
-    return m_plot->graph(idx);
+    return m_graphByPoint.value(pointId, nullptr);
+}
+
+int RealtimePlotWidget::graphDataCount(uint32_t pointId) const {
+    QCPGraph* g = graphAt(pointId);
+    return g ? g->dataCount() : 0;
+}
+
+bool RealtimePlotWidget::xAxisContains(qint64 tsMs) const {
+    const double key = static_cast<double>(tsMs) / 1000.0;
+    return m_plot->xAxis->range().contains(key);
 }
 
 QCPAxis* RealtimePlotWidget::rightAxis() {

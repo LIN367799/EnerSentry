@@ -82,7 +82,7 @@ int RealtimeChartWidget::channelListCount() const {
 
 void RealtimeChartWidget::onSampleBridge(const ens::datahub::Sample& s) {
     // 主线程投递（跨线程安全；样本高频时按 pointId 建通道一次后只转发）
-    QMetaObject::invokeMethod(m_plot, [this, pid = s.pointId, v = double(s.value), ts = s.timestamp]() {
+    QMetaObject::invokeMethod(this, [this, pid = s.pointId, v = double(s.value), ts = s.timestamp]() {
         if (!m_plot->hasChannel(pid) && m_plot->channelCount() < kMaxChannels) {
             m_plot->addChannel(pid, QStringLiteral("pt %1").arg(pid), QColor());
         }

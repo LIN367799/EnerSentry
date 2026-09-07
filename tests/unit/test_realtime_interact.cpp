@@ -62,6 +62,29 @@ TEST_CASE("realtime plot: channel axis switch to right creates right axis",
     pump();
 }
 
+TEST_CASE("realtime plot: refresh keeps rolling data and follows epoch x axis",
+          "[ui][rt-interact][tier2]") {
+    RealtimePlotWidget w;
+    w.resize(800, 400);
+    w.show();
+    pump();
+
+    w.addChannel(1, QStringLiteral("pt 1"), QColor());
+    const qint64 base = 1756800000000LL;
+    w.onNewSample(1, 10.0, base);
+    w.onNewSample(1, 11.0, base + 1000);
+    w.refreshNow();
+
+    REQUIRE(w.graphDataCount(1) == 2);
+    REQUIRE(w.xAxisContains(base + 1000));
+
+    w.onNewSample(1, 12.0, base + 2000);
+    w.refreshNow();
+    REQUIRE(w.graphDataCount(1) == 3);
+    REQUIRE(w.xAxisContains(base + 2000));
+    w.close();
+}
+
 TEST_CASE("realtime plot: ruler toggle renders multi-channel readout",
           "[ui][rt-interact][tier2]") {
     RealtimePlotWidget w;
@@ -106,6 +129,7 @@ TEST_CASE("realtime chart: bus stream auto-creates channel list rows",
     pump();                                       // Queued → 建通道 + 列表行
 
     REQUIRE(w.channelListCount() == 2);
-    w.close();
-    pump();
+    // 隐藏会先停止图表刷新定时器，再由作用域结束触发退订析构。
+    w.hide();
+    pump(10);
 }

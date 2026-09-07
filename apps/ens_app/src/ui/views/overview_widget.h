@@ -5,8 +5,10 @@
 #pragma once
 
 #include <QAtomicInt>
+#include <QHash>
 #include <QLabel>
 #include <QMutex>
+#include <QString>
 #include <QTimer>
 #include <QVariant>
 #include <QVector>
@@ -19,6 +21,8 @@
 #include "DataBus.h"
 
 class QVBoxLayout;
+class QTreeWidget;
+class QTreeWidgetItem;
 
 namespace ens::protocol {
 class PointTable;
@@ -32,6 +36,14 @@ namespace ens::ui {
 
 class SocGauge;
 class TempHeatBar;
+
+struct OverviewDrillPoint {
+    QString name;
+    QString unit;
+    int     rackNo = -1;
+    uint8_t slave = 0;
+    uint16_t registerAddr = 0;
+};
 
 /// DataBus 订阅桥（非阻塞：onSample 仅原子写 + 轻量缓存，绝不触碰 UI）
 class OverviewSubscriber final : public ens::datahub::IDataBusSubscriber {
@@ -74,14 +86,24 @@ public:
     // ── 测试观测（500ms 刷新后值）──
     double lastSoc() const noexcept { return m_lastSoc; }
     int    heatCellCount() const noexcept { return m_heatCount; }
+    int    drillRackCount() const noexcept { return m_drillRackCount; }
+    QString drillBreadcrumb() const;
     /// 立即执行一次 UI 刷新（生产由 500ms timer 驱动；测试显式触发用）
     void refreshNow() { onRefreshUi(); }
 
 private slots:
     void onRefreshUi();
+    void onDrillItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
+    void onDrillItemActivated(QTreeWidgetItem* item, int column);
 
 private:
     void buildPointIndex();   // 点表 → SOC 点 / 簇温度点索引
+    void setupDrilldownUi();
+    void populateDrillTree();
+    void refreshDrillTreeValues();
+    void updateDrillSummary(QTreeWidgetItem* item);
+    QString formatPointValue(uint32_t pointId, const QString& unit) const;
+    static int rackNoFromName(const QString& name);
 
     Ui::OverviewWidget* ui;
     ens::datahub::DataBus* m_bus;
@@ -95,9 +117,17 @@ private:
 
     QVector<uint32_t> m_socIds;               // Rack SOC 点
     QVector<int>      m_rackOrder;            // 簇号升序
+    QHash<int, uint32_t> m_socByRack;          // rackNo → SOC pointId
     QHash<int, uint32_t> m_maxTempByRack;     // rackNo → MaxTemp pointId
+    QHash<int, QVector<uint32_t>> m_pointsByRack;        // rackNo → pointIds
+    QHash<uint32_t, OverviewDrillPoint> m_pointInfo;     // pointId → UI 元数据
     double m_lastSoc = 0.0;
     int    m_heatCount = 0;
+
+    QTreeWidget* m_drillTree = nullptr;
+    QLabel*      m_drillBreadcrumb = nullptr;
+    QLabel*      m_drillSummary = nullptr;
+    int          m_drillRackCount = 0;
 };
 
 }  // namespace ens::ui

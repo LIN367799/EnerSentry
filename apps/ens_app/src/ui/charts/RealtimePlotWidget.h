@@ -47,6 +47,8 @@ public:
     void removeChannel(uint32_t pointId);
     bool hasChannel(uint32_t pointId) const { return m_buf.contains(pointId); }
     int  channelCount() const { return m_buf.size(); }
+    int  graphDataCount(uint32_t pointId) const;
+    bool xAxisContains(qint64 tsMs) const;
 
     /// 采集侧入口（主线程 onSample 桥）：仅缓冲，绝不 replot
     void onNewSample(uint32_t pointId, double value, qint64 tsMs);
@@ -103,6 +105,7 @@ private:
 
     QCustomPlot* m_plot;
     QHash<uint32_t, QSharedPointer<ChannelBuffer>> m_buf;   // pointId → 通道
+    QHash<uint32_t, QCPGraph*> m_graphByPoint;              // pointId → graph
     QTimer m_timer;                          // 33ms ≈ 30Hz（PreciseTimer）
     QVector<QColor> m_palette;
     int m_nextColor = 0;
