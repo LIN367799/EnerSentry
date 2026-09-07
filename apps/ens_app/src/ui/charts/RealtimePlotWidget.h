@@ -41,6 +41,7 @@ public:
     enum class AxisSide { Left, Right };
 
     explicit RealtimePlotWidget(QWidget* parent = nullptr);
+    ~RealtimePlotWidget() override;
 
     // ── 通道管理（RealtimeChartWidget 按 DataBus 流出现顺序建通道，上限 8）──
     void addChannel(uint32_t pointId, const QString& name, const QColor& color);

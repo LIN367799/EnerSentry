@@ -91,6 +91,15 @@ RealtimePlotWidget::RealtimePlotWidget(QWidget* parent) : QWidget(parent) {
             this, &RealtimePlotWidget::onMouseMove);
 }
 
+RealtimePlotWidget::~RealtimePlotWidget() {
+    m_timer.stop();
+    if (m_plot) {
+        disconnect(m_plot, nullptr, this, nullptr);
+        detachReadoutItems();
+        m_plot->clearGraphs();
+    }
+}
+
 void RealtimePlotWidget::addChannel(uint32_t pointId, const QString& name, const QColor& color) {
     if (m_buf.contains(pointId)) return;
     auto buf = QSharedPointer<ChannelBuffer>::create();
